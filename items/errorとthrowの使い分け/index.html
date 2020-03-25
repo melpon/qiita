@@ -1,0 +1,228 @@
+<p>Erlangの実行時に使える例外機構には<code>exit/1</code>、<code>error/1</code>、<code>throw/1</code>があります。<br>
+この中で<code>error/1</code>と<code>throw/1</code>をどう使い分ければいいかを調べました。</p>
+
+<h2>
+<span id="結論" class="fragment"></span><a href="#%E7%B5%90%E8%AB%96"><i class="fa fa-link"></i></a>結論</h2>
+
+<ul>
+<li>
+<code>error/1</code>はエラーを伝えるために使う</li>
+<li>
+<code>throw/1</code>はフロー制御のために使う</li>
+</ul>
+
+<h2>
+<span id="もう少し詳細に" class="fragment"></span><a href="#%E3%82%82%E3%81%86%E5%B0%91%E3%81%97%E8%A9%B3%E7%B4%B0%E3%81%AB"><i class="fa fa-link"></i></a>もう少し詳細に</h2>
+
+<p><code>error/1</code>と<code>throw/1</code>の大きな違いは、スタックトレースを持っているかどうかです。<br>
+つまり<code>throw/1</code>は <strong>スタックトレースを必要としない処理にだけ使え</strong> というのが言語側の意図なのでしょう。</p>
+
+<p>いくつかのサイトやプロジェクトを調べた限り、以下のような方針で使うのが良さそうです。</p>
+
+<p><code>error/1</code>は、</p>
+
+<ul>
+<li>他の言語で言う「例外を投げる」ということをする場合に使う</li>
+<li>エラーが起きて処理が続行できなくなったことを上位レイヤに知らせるために使う</li>
+<li>そのエラーでプロセスがクラッシュしても構わない場合に使う</li>
+</ul>
+
+<p>要するに、普通に例外を投げる気分で投げればいいだけなので、そんなに難しく考えなくても大丈夫そうです。</p>
+
+<p><code>throw/1</code>は、</p>
+
+<ul>
+<li>他の言語で言う「gotoで飛ばして共通処理を行う」ということをする場合に使う</li>
+<li>ネストした関数から <code>{ok, Value}</code> と <code>{error, Reason}</code> で抜けていくのは、<code>case ... of</code> だけでやってるとかなり辛いので、それらをうまいこと扱うために使う</li>
+<li>アプリケーションを超えてその関数を呼び出す側は、間違いなく<code>throw/1</code>が呼ばれることを想定していないことを意識して使う
+
+<ul>
+<li>
+<code>throw/1</code>を投げることでプロセスが落ちるようなら、間違いなくバグ</li>
+</ul>
+</li>
+</ul>
+
+<p>要するに「フロー制御のために使う」ということになるのですが、これは例を見たほうが早いでしょう。</p>
+
+<p><code>throw/1</code>を使った例として、各要素に <code>{ok, Value} | {error, Reason}</code> を返す関数を適用しつつ、エラーが起きたら即座に中断する関数を定義するなら、以下の様に書きます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">apply_f</span><span class="p">(</span><span class="nv">F</span><span class="p">,</span> <span class="nv">Xs</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="k">try</span>
+    <span class="nn">lists</span><span class="p">:</span><span class="nf">map</span><span class="p">(</span><span class="k">fun</span> <span class="p">(</span><span class="nv">X</span><span class="p">)</span> <span class="o">-&gt;</span>
+                <span class="k">case</span> <span class="nv">F</span><span class="p">(</span><span class="nv">X</span><span class="p">)</span> <span class="k">of</span>
+                  <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="nv">Value</span><span class="p">;</span>
+                  <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="nf">throw</span><span class="p">(</span><span class="nv">Reason</span><span class="p">)</span>
+                <span class="k">end</span>
+              <span class="k">end</span><span class="p">,</span> <span class="nv">Xs</span><span class="p">)</span>
+  <span class="k">of</span>
+    <span class="nv">Rs</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Rs</span><span class="p">}</span>
+  <span class="k">catch</span>
+    <span class="nv">Reason</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>もし <code>throw</code> を使わない場合、以下の様になります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">apply_f</span><span class="p">(</span><span class="nv">F</span><span class="p">,</span> <span class="nv">Xs</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="k">case</span>
+    <span class="nn">lists</span><span class="p">:</span><span class="nf">foldl</span><span class="p">(</span><span class="k">fun</span> <span class="p">(_</span><span class="nv">X</span><span class="p">,</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">})</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">};</span>
+                    <span class="p">(</span><span class="nv">X</span><span class="p">,</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Rs</span><span class="p">})</span> <span class="o">-&gt;</span>
+                      <span class="k">case</span> <span class="nv">F</span><span class="p">(</span><span class="nv">X</span><span class="p">)</span> <span class="k">of</span>
+                        <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">[</span><span class="nv">Value</span> <span class="p">|</span> <span class="nv">Rs</span><span class="p">]};</span>
+                        <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span>
+                      <span class="k">end</span>
+                <span class="k">end</span><span class="p">,</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">[]},</span> <span class="nv">Xs</span><span class="p">)</span>
+  <span class="k">of</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Rs</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nn">lists</span><span class="p">:</span><span class="nf">reverse</span><span class="p">(</span><span class="nv">Rs</span><span class="p">)};</span>
+    <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>読むのが大分つらくなっている感じがします。<br>
+また、<code>throw/1</code>を使った場合、その瞬間ループが止まるのに対して、こちらは全ての要素に対してループするため、おそらく処理速度的にも<code>throw/1</code>を使う方が速い可能性が高いでしょう。<sup id="fnref1"><a href="#fn1" rel="footnote" title="throw/1を投げるコスト、リストの長さ、渡された関数が {error, Reason} を返す確率によって変わるので、一概にどちらが速いと言うことはできません。">1</a></sup></p>
+
+<h2>
+<span id="throw1の使い所" class="fragment"></span><a href="#throw1%E3%81%AE%E4%BD%BF%E3%81%84%E6%89%80"><i class="fa fa-link"></i></a><code>throw/1</code>の使い所</h2>
+
+<p><code>throw/1</code>をどのように使うかに関して、いくつか書籍やライブラリを調べてみました。</p>
+
+<h3>
+<span id="すごいe本" class="fragment"></span><a href="#%E3%81%99%E3%81%94%E3%81%84e%E6%9C%AC"><i class="fa fa-link"></i></a>すごいE本</h3>
+
+<p>以下の様に書いています。</p>
+
+<blockquote>
+<p>スロー（throw）は例外のクラスで、プログラマが予想した事態に対処するために使われます。その意図は、終了やエラーのように「プロセスをクラッシュしろ！」と伝えることではなく、フローの制御です。</p>
+</blockquote>
+
+<h3>
+<span id="stack-overflow" class="fragment"></span><a href="#stack-overflow"><i class="fa fa-link"></i></a>Stack Overflow</h3>
+
+<p><a href="http://stackoverflow.com/questions/13618261/when-to-use-throw-1-vs-exit-1-vs-error-1-in-erlang%5D" rel="nofollow noopener" target="_blank">when to use throw/1 vs. exit/1 vs. error/1 in Erlang? - Stack Overflow</a> では、以下の様な例が挙げられています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">exists</span><span class="p">(</span><span class="nv">P</span><span class="p">,</span> <span class="nv">List</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="nv">F</span> <span class="o">=</span> <span class="k">fun</span><span class="p">(</span><span class="nv">X</span><span class="p">)</span> <span class="o">-&gt;</span> 
+    <span class="k">case</span> <span class="nv">P</span><span class="p">(</span><span class="nv">X</span><span class="p">)</span> <span class="k">of</span> 
+      <span class="n">true</span> <span class="o">-&gt;</span> <span class="nf">throw</span><span class="p">(</span><span class="n">true</span><span class="p">);</span> 
+      <span class="nv">Whatever</span> <span class="o">-&gt;</span> <span class="nv">Whatever</span> 
+    <span class="k">end</span>
+  <span class="k">end</span><span class="p">,</span>
+  <span class="k">try</span> <span class="nn">lists</span><span class="p">:</span><span class="nf">foreach</span><span class="p">(</span><span class="nv">F</span><span class="p">,</span> <span class="nv">List</span><span class="p">)</span> <span class="k">of</span>
+    <span class="n">ok</span> <span class="o">-&gt;</span> <span class="n">false</span>
+  <span class="k">catch</span>
+   <span class="n">true</span> <span class="o">-&gt;</span> <span class="n">true</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>ローカルでのループからの離脱に <code>throw/1</code> を使っています。</p>
+
+<h3>
+<span id="array" class="fragment"></span><a href="#array"><i class="fa fa-link"></i></a>array</h3>
+
+<p>標準ライブラリのarrayでは以下の様に使っています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">reset</span><span class="p">(</span><span class="nv">I</span><span class="p">,</span> <span class="nl">#array</span><span class="p">{</span><span class="nb">size</span> <span class="o">=</span> <span class="nv">N</span><span class="p">,</span> <span class="n">max</span> <span class="o">=</span> <span class="nv">M</span><span class="p">,</span> <span class="n">default</span> <span class="o">=</span> <span class="nv">D</span><span class="p">,</span> <span class="n">elements</span> <span class="o">=</span> <span class="nv">E</span><span class="p">}</span><span class="o">=</span><span class="nv">A</span><span class="p">)</span>
+    <span class="k">when</span> <span class="nb">is_integer</span><span class="p">(</span><span class="nv">I</span><span class="p">),</span> <span class="nv">I</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">-&gt;</span>
+    <span class="k">if</span> <span class="nv">I</span> <span class="o">&lt;</span> <span class="nv">N</span> <span class="o">-&gt;</span>
+            <span class="k">try</span> <span class="nv">A</span><span class="nl">#array</span><span class="p">{</span><span class="n">elements</span> <span class="o">=</span> <span class="nf">reset_1</span><span class="p">(</span><span class="nv">I</span><span class="p">,</span> <span class="nv">E</span><span class="p">,</span> <span class="nv">D</span><span class="p">)}</span> 
+            <span class="k">catch</span> <span class="nn">throw</span><span class="p">:</span><span class="n">default</span> <span class="o">-&gt;</span> <span class="nv">A</span>
+            <span class="k">end</span><span class="p">;</span>
+       <span class="nv">M</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">-&gt;</span>
+            <span class="nv">A</span><span class="p">;</span>
+       <span class="n">true</span> <span class="o">-&gt;</span>
+            <span class="nn">erlang</span><span class="p">:</span><span class="nf">error</span><span class="p">(</span><span class="n">badarg</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">;</span>
+<span class="nf">reset</span><span class="p">(_</span><span class="nv">I</span><span class="p">,</span> <span class="p">_</span><span class="nv">A</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">erlang</span><span class="p">:</span><span class="nf">error</span><span class="p">(</span><span class="n">badarg</span><span class="p">).</span>
+
+<span class="nf">reset_1</span><span class="p">(</span><span class="nv">I</span><span class="p">,</span> <span class="nv">E</span><span class="o">=?</span><span class="nv">NODEPATTERN</span><span class="p">(</span><span class="nv">S</span><span class="p">),</span> <span class="nv">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">...</span>
+<span class="nf">reset_1</span><span class="p">(_</span><span class="nv">I</span><span class="p">,</span> <span class="nv">E</span><span class="p">,</span> <span class="p">_</span><span class="nv">D</span><span class="p">)</span> <span class="k">when</span> <span class="nb">is_integer</span><span class="p">(</span><span class="nv">E</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nf">throw</span><span class="p">(</span><span class="n">default</span><span class="p">);</span>
+<span class="nf">reset_1</span><span class="p">(</span><span class="nv">I</span><span class="p">,</span> <span class="nv">E</span><span class="p">,</span> <span class="nv">D</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">...</span>
+</pre></div></div>
+
+<p><code>reset_1/3</code> で <code>throw(default)</code> を投げ、それを <code>reset/2</code> で受けて、デフォルト値 <code>A</code> を返すようにしています。<br>
+こうすることで、<code>reset_1/3</code> でデフォルト値を持つ必要が無くなるし、デフォルト値のためだけに <code>{ok, Value} | default</code> みたいな戻り値を返すように全ての関数を修正する必要も無くなります。</p>
+
+<h3>
+<span id="gproc" class="fragment"></span><a href="#gproc"><i class="fa fa-link"></i></a>gproc</h3>
+
+<p>gprocでも例外が使われています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">CATCH_GPROC_ERROR</span><span class="p">(</span><span class="nv">Expr</span><span class="p">,</span> <span class="nv">Args</span><span class="p">),</span>
+        <span class="k">try</span> <span class="nv">Expr</span>
+        <span class="k">catch</span>
+            <span class="nn">throw</span><span class="p">:{</span><span class="n">gproc_error</span><span class="p">,</span> <span class="nv">GprocError</span><span class="p">}</span> <span class="o">-&gt;</span>
+                <span class="nn">erlang</span><span class="p">:</span><span class="nf">error</span><span class="p">(</span><span class="nv">GprocError</span><span class="p">,</span> <span class="nv">Args</span><span class="p">)</span>
+        <span class="k">end</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">THROW_GPROC_ERROR</span><span class="p">(</span><span class="nv">E</span><span class="p">),</span> <span class="nf">throw</span><span class="p">({</span><span class="n">gproc_error</span><span class="p">,</span> <span class="nv">E</span><span class="p">})).</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">reg_or_locate</span><span class="p">(</span><span class="nv">Key</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="o">?</span><span class="nv">CATCH_GPROC_ERROR</span><span class="p">(</span><span class="nf">reg_or_locate1</span><span class="p">(</span><span class="nv">Key</span><span class="p">),</span> <span class="p">[</span><span class="nv">Key</span><span class="p">]).</span>
+
+<span class="p">...</span>
+<span class="nf">reg_or_locate1</span><span class="p">(_,</span> <span class="p">_,</span> <span class="p">_)</span> <span class="o">-&gt;</span>
+    <span class="o">?</span><span class="nv">THROW_GPROC_ERROR</span><span class="p">(</span><span class="n">badarg</span><span class="p">).</span>
+</pre></div></div>
+
+<p>エラーが起きた時に <code>throw/1</code> で例外を投げて、一番外側の関数でそれを受け、<code>error/2</code> を投げ直しています。</p>
+
+<p>エラーが起きた時に <code>error/1</code> ではなく <code>throw/1</code> を使っているのは、引数 <code>Args</code> の情報を <code>error/2</code> に入れるためでしょう。<br>
+失敗時のフロー制御として <code>throw/1</code> を使い、アプリケーションの最上位の関数で受けとり、受け取った側でgprocを使うユーザのためのエラーハンドリングをしているようです。</p>
+
+<h3>
+<span id="lager" class="fragment"></span><a href="#lager"><i class="fa fa-link"></i></a>lager</h3>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">validate_logfile_proplist</span><span class="p">(</span><span class="nv">List</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">try</span> <span class="nf">validate_logfile_proplist</span><span class="p">(</span><span class="nv">List</span><span class="p">,</span> <span class="p">[])</span> <span class="k">of</span>
+        <span class="nv">Res</span> <span class="o">-&gt;</span> <span class="p">...</span>
+    <span class="k">catch</span>
+        <span class="p">{</span><span class="n">bad_config</span><span class="p">,</span> <span class="nv">Msg</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="o">?</span><span class="nv">INT_LOG</span><span class="p">(</span><span class="n">error</span><span class="p">,</span> <span class="s">"</span><span class="si">~s</span><span class="s"> </span><span class="si">~p</span><span class="s"> for file </span><span class="si">~p</span><span class="s">"</span><span class="p">,</span>
+                <span class="p">[</span><span class="nv">Msg</span><span class="p">,</span> <span class="nv">Value</span><span class="p">,</span> <span class="nn">proplists</span><span class="p">:</span><span class="nf">get_value</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="nv">List</span><span class="p">)]),</span>
+            <span class="n">false</span>
+    <span class="k">end</span><span class="p">.</span>
+
+<span class="nf">validate_logfile_proplist</span><span class="p">([{</span><span class="n">level</span><span class="p">,</span> <span class="nv">Level</span><span class="p">}|</span><span class="nv">Tail</span><span class="p">],</span> <span class="nv">Acc</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">case</span> <span class="nf">validate_loglevel</span><span class="p">(</span><span class="nv">Level</span><span class="p">)</span> <span class="k">of</span>
+        <span class="n">false</span> <span class="o">-&gt;</span>
+            <span class="nf">throw</span><span class="p">({</span><span class="n">bad_config</span><span class="p">,</span> <span class="s">"Invalid loglevel"</span><span class="p">,</span> <span class="nv">Level</span><span class="p">});</span>
+        <span class="nv">Res</span> <span class="o">-&gt;</span>
+            <span class="nf">validate_logfile_proplist</span><span class="p">(</span><span class="nv">Tail</span><span class="p">,</span> <span class="p">[{</span><span class="n">level</span><span class="p">,</span> <span class="nv">Res</span><span class="p">}|</span><span class="nv">Acc</span><span class="p">])</span>
+    <span class="k">end</span><span class="p">;</span>
+<span class="nf">validate_logfile_proplist</span><span class="p">([{</span><span class="nb">size</span><span class="p">,</span> <span class="nv">Size</span><span class="p">}|</span><span class="nv">Tail</span><span class="p">],</span> <span class="nv">Acc</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">case</span> <span class="nv">Size</span> <span class="k">of</span>
+        <span class="nv">S</span> <span class="k">when</span> <span class="nb">is_integer</span><span class="p">(</span><span class="nv">S</span><span class="p">),</span> <span class="nv">S</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">-&gt;</span>
+            <span class="nf">validate_logfile_proplist</span><span class="p">(</span><span class="nv">Tail</span><span class="p">,</span> <span class="p">[{</span><span class="nb">size</span><span class="p">,</span> <span class="nv">Size</span><span class="p">}|</span><span class="nv">Acc</span><span class="p">]);</span>
+        <span class="p">_</span> <span class="o">-&gt;</span>
+            <span class="nf">throw</span><span class="p">({</span><span class="n">bad_config</span><span class="p">,</span> <span class="s">"Invalid rotation size"</span><span class="p">,</span> <span class="nv">Size</span><span class="p">})</span>
+    <span class="k">end</span><span class="p">;</span>
+<span class="p">...</span>
+</pre></div></div>
+
+<p>lagerでは設定ファイルのバリデーションに<code>throw/1</code>が使われていました。<br>
+これを<code>throw/1</code>を使わないように書き換えるのは結構面倒だし、かなり分かりにくくなると思うので、バリデーションの処理に<code>throw/1</code>を使うのはとても良さそうです。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://github.com/uwiger/gproc" rel="nofollow noopener" target="_blank">uwiger/gproc: Extended process registry for Erlang</a></li>
+<li><a href="https://github.com/erlang-lager/lager" rel="nofollow noopener" target="_blank">erlang-lager/lager: A logging framework for Erlang/OTP</a></li>
+<li><a href="https://www.amazon.co.jp/dp/B00MLUGZIS/" rel="nofollow noopener" target="_blank">Amazon.co.jp: すごいErlangゆかいに学ぼう！</a></li>
+<li><a href="http://stackoverflow.com/questions/13618261/when-to-use-throw-1-vs-exit-1-vs-error-1-in-erlang%5D" rel="nofollow noopener" target="_blank">when to use throw/1 vs. exit/1 vs. error/1 in Erlang? - Stack Overflow</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>throw/1</code>を投げるコスト、リストの長さ、渡された関数が <code>{error, Reason}</code> を返す確率によって変わるので、一概にどちらが速いと言うことはできません。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

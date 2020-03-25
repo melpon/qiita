@@ -1,0 +1,195 @@
+<p>HTTP経由で何らかのデータを読み込み、一定時間経ったらキャッシュアウトして再度取得する、という（多分）よくある実装について考えます。</p>
+
+<h2>
+<span id="etsを使う" class="fragment"></span><a href="#ets%E3%82%92%E4%BD%BF%E3%81%86"><i class="fa fa-link"></i></a>ETSを使う</h2>
+
+<p>一番簡単なのは、ETSに入れることです。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">cache_ets.erl</span></div>
+<div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">cache_ets</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="nb">get</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+
+<span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">TAB</span><span class="p">,</span> <span class="n">cache_tab</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">KEY</span><span class="p">,</span> <span class="n">cache_key</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">CACHE_TIMEOUT</span><span class="p">,</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">).</span>
+
+<span class="nf">init</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="nn">ets</span><span class="p">:</span><span class="nf">new</span><span class="p">(</span><span class="o">?</span><span class="nv">TAB</span><span class="p">,</span> <span class="p">[</span><span class="n">public</span><span class="p">,</span> <span class="n">named_table</span><span class="p">]),</span>
+  <span class="nf">update</span><span class="p">().</span>
+
+<span class="nb">get</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="k">case</span> <span class="nn">ets</span><span class="p">:</span><span class="nf">lookup</span><span class="p">(</span><span class="o">?</span><span class="nv">TAB</span><span class="p">,</span> <span class="o">?</span><span class="nv">KEY</span><span class="p">)</span> <span class="k">of</span>
+    <span class="p">[{</span><span class="o">?</span><span class="nv">KEY</span><span class="p">,</span> <span class="nv">ExpiredAt</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}]</span> <span class="o">-&gt;</span>
+      <span class="c">%% 期限切れかどうかの確認
+</span>      <span class="nv">Now</span> <span class="o">=</span> <span class="nn">erlang</span><span class="p">:</span><span class="nf">monotonic_time</span><span class="p">(</span><span class="n">millisecond</span><span class="p">),</span>
+      <span class="k">case</span> <span class="nv">ExpiredAt</span> <span class="o">&lt;</span> <span class="nv">Now</span> <span class="k">of</span>
+        <span class="n">true</span> <span class="o">-&gt;</span> <span class="nf">update</span><span class="p">();</span>
+        <span class="n">false</span> <span class="o">-&gt;</span> <span class="nv">Value</span>
+      <span class="k">end</span>
+  <span class="k">end</span><span class="p">.</span>
+
+<span class="nf">update</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="c">%% HTTP経由で値を取得する
+</span>  <span class="nv">Value</span> <span class="o">=</span> <span class="nf">do_process</span><span class="p">(),</span>
+  <span class="c">%% キャッシュの期限切れの時間を書いて格納する
+</span>  <span class="nv">ExpiredAt</span> <span class="o">=</span> <span class="nn">erlang</span><span class="p">:</span><span class="nf">monotonic_time</span><span class="p">(</span><span class="n">millisecond</span><span class="p">)</span> <span class="o">+</span> <span class="o">?</span><span class="nv">CACHE_TIMEOUT</span><span class="p">,</span>
+  <span class="nn">ets</span><span class="p">:</span><span class="nf">insert</span><span class="p">(</span><span class="o">?</span><span class="nv">TAB</span><span class="p">,</span> <span class="p">{</span><span class="o">?</span><span class="nv">KEY</span><span class="p">,</span> <span class="nv">ExpiredAt</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}),</span>
+  <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<p>しかしこれには問題があります。<br>
+HTTPでの問い合わせで大量アクセスが発生したり、あるいは古い値で上書きする可能性があります。</p>
+
+<p>例えばプロセスが10,000個ぐらいあり、それらがそこそこ高い頻度で<code>get/0</code>を呼んでいるとします。<br>
+この時、以下のようになる場合があります。</p>
+
+<ol>
+<li>期限切れになった後にあるプロセスが<code>get/0</code>を呼び出すと、期限切れと判断されて<code>update/0</code>の中に入り、このプロセスがHTTP通信を開始する</li>
+<li>HTTP通信は時間が掛かるので、その間に他のプロセスは<code>get/0</code>を呼び出すが、これも更新切れと判断され、このプロセスもHTTP通信を開始する</li>
+<li>同様に残り9,998個のプロセスがHTTP通信を開始する</li>
+</ol>
+
+<p>つまり最大で10,000リクエストが同時に発生する可能性があります。<br>
+HTTPサーバに負荷を掛けたくないがためのキャッシュなのに、これだと意味がありません。</p>
+
+<p>更に、以下のようなケースも考えられます。</p>
+
+<ol>
+<li>期限切れになった後にプロセスAが<code>get/0</code>を呼び出すと、期限切れと判断されて<code>update/0</code>の中に入り、プロセスAがHTTP通信を開始する</li>
+<li>プロセスAが値<em>foobar</em>を受け取る</li>
+<li>管理者がHTTPサーバの設定を変えて、値<em>hogefuga</em>になるように変更する</li>
+<li>プロセスBが<code>get/0</code>を呼び出し、期限切れと判断されて<code>update/0</code>の中に入り、プロセスBがHTTP通信を開始する</li>
+<li>プロセスBが値<em>hogefuga</em>を受け取る</li>
+<li>プロセスBが<code>ets:insert/2</code>を呼び出して値<em>hogefuga</em>を書き込む</li>
+<li>プロセスAが<code>ets:insert/2</code>を呼び出して値<em>foobar</em>を書き込む</li>
+</ol>
+
+<p>こうなると、プロセスAの持っていた古い値が書き込まれます。<br>
+これは次のキャッシュタイムアウトの更新で直る可能性もあるし、直らない可能性もあります。<br>
+いつ反映されるか分からないとなると、少し困るかもしれません。</p>
+
+<p>これはどちらも、<code>ets:lookup/2</code>から<code>ets:insert/2</code>を呼び出すまでの間に別の処理が入っていることに起因します。<br>
+つまり、<code>ets:lookup/2</code>から<code>ets:insert/2</code>を呼び出すまでの間は、ロックされていて欲しいのです。</p>
+
+<h2>
+<span id="プロセスを使う" class="fragment"></span><a href="#%E3%83%97%E3%83%AD%E3%82%BB%E3%82%B9%E3%82%92%E4%BD%BF%E3%81%86"><i class="fa fa-link"></i></a>プロセスを使う</h2>
+
+<p>Erlangでロックと言えばプロセスです。<br>
+以下のような実装にしてみましょう。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">cache_proc.erl</span></div>
+<div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">cache_proc</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="nb">get</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="n">init</span><span class="o">/</span><span class="mi">1</span><span class="p">,</span> <span class="n">handle_call</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="p">...]).</span>
+
+<span class="p">-</span><span class="ni">define</span><span class="p">(</span><span class="no">CACHE_PROC</span><span class="p">,</span> <span class="p">__</span><span class="nv">MODULE__</span><span class="p">).</span>
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">gen_server</span><span class="p">).</span>
+
+<span class="nf">init</span><span class="p">([])</span> <span class="o">-&gt;</span>
+  <span class="nn">cache_ets</span><span class="p">:</span><span class="nf">init</span><span class="p">(),</span>
+  <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="p">{}}.</span>
+
+<span class="nf">handle_call</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="p">{</span><span class="n">reply</span><span class="p">,</span> <span class="nn">cache_ets</span><span class="p">:</span><span class="nb">get</span><span class="p">(),</span> <span class="nv">State</span><span class="p">}.</span>
+
+<span class="p">...</span>
+
+<span class="nb">get</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="nn">gen_server</span><span class="p">:</span><span class="nf">call</span><span class="p">(</span><span class="o">?</span><span class="nv">CACHE_PROC</span><span class="p">,</span> <span class="nb">get</span><span class="p">).</span>
+</pre></div>
+</div>
+
+<p>プロセスを使って、<code>get/0</code>の処理全体をロックします。<br>
+これによって、<code>cache_ets</code>モジュールの問題を解決します。</p>
+
+<p>しかし1プロセスで処理するため、今度はスケールしなくなります。<br>
+少なくともETSから取得するよりは遅くなるでしょう。</p>
+
+<p>期限切れが発生した時には仕方ないにしても、少なくともキャッシュから取り出す時ぐらいはETSにアクセスするのと同程度の速度を出したい、と思ったので、もう少し頑張ってみました。</p>
+
+<h2>
+<span id="etsとプロセスを使う" class="fragment"></span><a href="#ets%E3%81%A8%E3%83%97%E3%83%AD%E3%82%BB%E3%82%B9%E3%82%92%E4%BD%BF%E3%81%86"><i class="fa fa-link"></i></a>ETSとプロセスを使う</h2>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">cache_dcl.erl</span></div>
+<div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">cache_dcl</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">export</span><span class="p">([</span><span class="nb">get</span><span class="o">/</span><span class="mi">0</span><span class="p">]).</span>
+
+<span class="nb">get</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="k">case</span> <span class="nn">ets</span><span class="p">:</span><span class="nf">lookup</span><span class="p">(</span><span class="o">?</span><span class="nv">TAB</span><span class="p">,</span> <span class="o">?</span><span class="nv">KEY</span><span class="p">)</span> <span class="k">of</span>
+    <span class="p">[{</span><span class="o">?</span><span class="nv">KEY</span><span class="p">,</span> <span class="nv">ExpiredAt</span><span class="p">,</span> <span class="nv">Value</span><span class="p">}]</span> <span class="o">-&gt;</span>
+      <span class="c">%% 期限切れかどうかの確認
+</span>      <span class="nv">Now</span> <span class="o">=</span> <span class="nn">erlang</span><span class="p">:</span><span class="nf">monotonic_time</span><span class="p">(</span><span class="n">millisecond</span><span class="p">),</span>
+      <span class="k">case</span> <span class="nv">ExpiredAt</span> <span class="o">&lt;</span> <span class="nv">Now</span> <span class="k">of</span>
+        <span class="n">true</span> <span class="o">-&gt;</span> <span class="nn">gen_server</span><span class="p">:</span><span class="nf">call</span><span class="p">(</span><span class="o">?</span><span class="nv">CACHE_PROC</span><span class="p">,</span> <span class="nb">get</span><span class="p">);</span>
+        <span class="n">false</span> <span class="o">-&gt;</span> <span class="nv">Value</span>
+      <span class="k">end</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<p>まず<code>get/0</code>で<code>ets:lookup/2</code>を実行して、期限切れかどうかを調べます。<br>
+もし期限切れじゃなかった場合はそのまま値が返します。<br>
+こうすることで、<code>cache_ets:get/0</code>の実装とほぼ同等の速度が出るはずです。</p>
+
+<p>もし期限切れだった場合は、単に<code>gen_server:call(?CACHE_PROC, get)</code>を実行するだけです。</p>
+
+<p><code>cache_proc.erl</code>のバージョンと違うのは、事前に<code>ets:lookup/2</code>して期限切れの確認を行うかどうかだけです。</p>
+
+<p>こうすることで、以下のようになります。</p>
+
+<ol>
+<li>プロセスAが<code>get/0</code>を実行して、期限切れで更新依頼を投げる</li>
+<li>プロセスBが<code>get/0</code>を実行して、期限切れで更新依頼を投げる</li>
+<li>同様に9,998プロセスが更新依頼を投げる</li>
+<li>
+<code>?CACHE_PROC</code>で更新依頼を受けて、<code>cache_ets:get/0</code>でもう一度期限切れの確認を行う</li>
+<li>期限切れになっているのでHTTPリクエストを投げて期限と値を更新して呼び出し元に値を返す</li>
+<li>
+<code>?CACHE_PROC</code>で更新依頼を受けて、<code>cache_ets:get/0</code>でもう一度期限切れの確認を行う</li>
+<li>期限切れではないので、そのまま呼び出し元に値を返す</li>
+<li>同様に9,998プロセスに値を返す</li>
+</ol>
+
+<p>このように複数のプロセスで期限切れがほぼ同時に発生しても、HTTPリクエストを投げるのは１回だけです。</p>
+
+<p>ただしこの実装は、HTTPリクエストを投げて結果を取得している間は、その間に<code>get/0</code>を呼び出した全てのプロセスが<code>gen_server:call/2</code>で待つことになります。<br>
+もしこの待ち時間が許容できない場合は、もっと別の方法を考える必要があります。</p>
+
+<h2>
+<span id="考察" class="fragment"></span><a href="#%E8%80%83%E5%AF%9F"><i class="fa fa-link"></i></a>考察</h2>
+
+<p>なぜこれでうまく動くのかというと、</p>
+
+<ul>
+<li>最終的には、<code>?CACHE_PROC</code>プロセスが期限切れの確認とETSの更新を行っている</li>
+<li>
+<code>get/0</code>で実行する期限切れの確認は、<strong>実際は更新が不要でも更新依頼を投げて構わない</strong> <sup id="fnref1"><a href="#fn1" rel="footnote" title="偽陽性(false positive)と言いますが、正直、偽陰性(false negative)とどっちがどっちか分からなくなるので誰か間違えない覚え方教えてください">1</a></sup>
+</li>
+</ul>
+
+<p>からです。</p>
+
+<p>「実際は更新が不要」というのは「既に別プロセスからの依頼で<code>?CACHE_PROC</code>が更新処理を実行しているから、他のプロセスから依頼を投げなくても、待ってればそのうち値が更新される」ということを意味します。</p>
+
+<p>今回のコードだと、過剰に更新依頼を投げる可能性はありますが、最終的な期限切れの確認は全て<code>?CACHE_PROC</code>プロセスが行なっているため、間違った更新依頼がいくら来ても、<code>cache_proc.erl</code>と同程度には安全に動きます。</p>
+
+<p>最初のチェックはロック（プロセス）の外で行って、そこを抜けたらロックを取り、再度チェックをして更新を行う、という手法は <a href="https://en.wikipedia.org/wiki/Double-checked_locking" rel="nofollow noopener" target="_blank">Double-checked locking</a> に相当します。<br>
+なぜかシングルトンパターンでしか見かけないし、<a href="http://yamasa.hatenablog.jp/entry/20100128/1264693781" rel="nofollow noopener" target="_blank">書くのが非常に難解だし大体言語側が何とかしてくれる</a> という残念な手法ですが、Erlangではリオーダリングの問題が発生しない（はず）なので、大丈夫でしょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>偽陽性(false positive)と言いますが、正直、偽陰性(false negative)とどっちがどっちか分からなくなるので誰か間違えない覚え方教えてください <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

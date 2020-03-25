@@ -1,0 +1,109 @@
+<p>Elixir アプリケーションを本番サーバで動かす時にはパッケージ化しましょう。</p>
+
+<h2>
+<span id="パッケージ化とは" class="fragment"></span><a href="#%E3%83%91%E3%83%83%E3%82%B1%E3%83%BC%E3%82%B8%E5%8C%96%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>パッケージ化とは</h2>
+
+<p>Elixir で言うパッケージ化というのは、</p>
+
+<ul>
+<li>依存しているアプリケーションやライブラリの beam ファイル</li>
+<li>設定ファイル</li>
+<li>Elixir 本体の beam ファイル</li>
+<li>ERTS と呼ばれる Erlang ランタイム</li>
+<li>アプリケーションを起動するためのスクリプト</li>
+</ul>
+
+<p>などを集めて、ほぼ単体で起動するように１つのディレクトリ内に纏めてしまうことを言います。<br>
+Elixir でパッケージ化するツールは、今は多分 <a href="https://hex.pm/packages/distillery" rel="nofollow noopener" target="_blank">Distillery</a> 一択です。</p>
+
+<p>2019/7/2 追記: Elixir 1.9.0 で公式に <a href="https://hexdocs.pm/mix/Mix.Tasks.Release.html" rel="nofollow noopener" target="_blank">mix release</a> が追加されました。なのでこちらで済む場合はこれを使うと良いでしょう。</p>
+
+<h2>
+<span id="パッケージ化の利点" class="fragment"></span><a href="#%E3%83%91%E3%83%83%E3%82%B1%E3%83%BC%E3%82%B8%E5%8C%96%E3%81%AE%E5%88%A9%E7%82%B9"><i class="fa fa-link"></i></a>パッケージ化の利点</h2>
+
+<p>パッケージ化する利点は <strong>そのサーバに Erlang と Elixir を入れる必要が無くなる</strong> ということに尽きます。</p>
+
+<ul>
+<li>Erlang や Elixir を入れる必要が無いので、サーバを構築するための Ansible だとか AMI を作る作業が楽</li>
+<li>サーバ内の Erlang や Elixir のバージョンを更新する必要が無いので、インフラの人との調整が不要</li>
+<li>デプロイするために git からソースを持ってきて起動みたいなことをしなくても、zip ファイル1個転送すれば動かせれる</li>
+<li>とても単純な仕組みになるので、デプロイシステム全体を理解する手間が減る</li>
+</ul>
+
+<p>Erlang と Elixir が不要になるので、ほぼ何も入っていない Alpine Linux ですら、必要なパッケージは <code>musl</code>, <code>ncurses-libs</code>, <code>zlib</code>, <code>bash</code> だけになります。<sup id="fnref1"><a href="#fn1" rel="footnote" title="bash は Distillery が要求しています。それ以外は Erlang VM を動かすために必要なのだけど、これはビルドフラグによっても変わります（例えば --disable-dynamic-ssl-lib を指定しなかった場合、OpenSSL あたりのライブラリが必要になってくる）。">1</a></sup><br>
+これらのパッケージを入れておけば、パッケージ化した Elixir アプリケーションはそのサーバで動作します。</p>
+
+<h2>
+<span id="パッケージ化する方法" class="fragment"></span><a href="#%E3%83%91%E3%83%83%E3%82%B1%E3%83%BC%E3%82%B8%E5%8C%96%E3%81%99%E3%82%8B%E6%96%B9%E6%B3%95"><i class="fa fa-link"></i></a>パッケージ化する方法</h2>
+
+<p>基本的には <a href="https://hexdocs.pm/distillery/home.html" rel="nofollow noopener" target="_blank">Distillery のドキュメント</a> を読んでその通りにするだけで作れます。</p>
+
+<p>この時重要なのは、<strong>その環境に入っている OS や Erlang や Elixir のバージョンでパッケージが作られる</strong> ということです。 <br>
+そのため、本番と同じ OS の上でパッケージ化する必要があります。</p>
+
+<p>このためにパッケージのビルド用サーバを作って、そこでパッケージ化するという手もありますが、個人的には Docker でビルドするのがお手軽で良いと思います。<br>
+パッケージをビルドする用のイメージと、それを使ってパッケージ化するスクリプトを書いておけば、<strong>誰でも簡単にローカルで</strong> パッケージが作れるようになるのが利点です。<sup id="fnref2"><a href="#fn2" rel="footnote" title="自分は prod.secret.exs を使わず環境変数（env パッケージ）を使う人なので、シークレットなデータを知らないせいでちゃんとパッケージ化できないみたいなことは無い。">2</a></sup></p>
+
+<h2>
+<span id="パッケージ化した際の注意点" class="fragment"></span><a href="#%E3%83%91%E3%83%83%E3%82%B1%E3%83%BC%E3%82%B8%E5%8C%96%E3%81%97%E3%81%9F%E9%9A%9B%E3%81%AE%E6%B3%A8%E6%84%8F%E7%82%B9"><i class="fa fa-link"></i></a>パッケージ化した際の注意点</h2>
+
+<p>Distillery でパッケージ化すると、<code>Mix</code> や <code>ExUnit</code> というライブラリが入りません。<br>
+そのため実行時に <code>Mix</code> や <code>ExUnit</code> を使うと、それらのモジュールが無いためエラーになります。<sup id="fnref3"><a href="#fn3" rel="footnote" title="これで問題が出た時に、ローカルでパッケージ化できるようにしてると割と簡単にデバッグできるので良い">3</a></sup></p>
+
+<p>例えば以下のコードは、<code>mix run</code> した場合は動きますが、パッケージ化して起動するとエラーになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="c1"># テスト時は :foo を返す</span>
+    <span class="k">if</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span><span class="p">()</span> <span class="o">==</span> <span class="ss">:test</span> <span class="k">do</span>
+      <span class="ss">:foo</span>
+    <span class="k">else</span>
+      <span class="ss">:bar</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これは <code>Mix.env/0</code> を実行時に使っているからです。<br>
+コンパイル時には <code>Mix.env/0</code> を使えるので、以下のようにするのがいいでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="c1"># テスト時は :foo を返す</span>
+  <span class="k">if</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span><span class="p">()</span> <span class="o">==</span> <span class="ss">:test</span> <span class="k">do</span>
+    <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+      <span class="ss">:foo</span>
+    <span class="k">end</span>
+  <span class="k">else</span>
+    <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+      <span class="ss">:bar</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで、コンパイル時に <code>Mix.env/0</code> が評価され、どちらかの関数だけが残ることになり、実行時に <code>Mix.env/0</code> を使わなくなるためエラーが無くなります。<br>
+パッケージ化した際に時々やってしまうことがあるので、気を付けましょう。</p>
+
+<p>また、パッケージ化すると <code>mix yacto.migrate</code> のような Mix のコマンドを打てなくなるので、本番データベースのマイグレーションをどうやってやるかというのが問題になってきます。<br>
+これは <a href="https://hexdocs.pm/distillery/guides/running_migrations.html" rel="nofollow noopener" target="_blank">Running migrations</a> にあるように、Mix を使わずにマイグレーションを実行するスクリプトを作り、それをパッケージ化したバイナリ経由で呼び出すのがいいでしょう。</p>
+
+<p>このように少し手間は掛かりますが、デプロイやサーバ管理を手軽にするために、パッケージ化をできるようにしておきましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>bash</code> は Distillery が要求しています。それ以外は Erlang VM を動かすために必要なのだけど、これはビルドフラグによっても変わります（例えば <code>--disable-dynamic-ssl-lib</code> を指定しなかった場合、OpenSSL あたりのライブラリが必要になってくる）。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>自分は <code>prod.secret.exs</code> を使わず環境変数（<a href="https://hex.pm/packages/env" rel="nofollow noopener" target="_blank"><code>env</code></a> パッケージ）を使う人なので、シークレットなデータを知らないせいでちゃんとパッケージ化できないみたいなことは無い。 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>これで問題が出た時に、ローカルでパッケージ化できるようにしてると割と簡単にデバッグできるので良い <a href="#fnref3">↩</a></p>
+</li>
+
+</ol>
+</div>

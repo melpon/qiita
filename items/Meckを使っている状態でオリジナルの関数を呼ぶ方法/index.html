@@ -1,0 +1,25 @@
+<p><a href="https://github.com/eproxus/meck" rel="nofollow noopener" target="_blank">Meck</a> はErlangのmockライブラリです。</p>
+
+<p>この使い方は <a href="https://gist.github.com/voluntas/4243779" rel="nofollow noopener" target="_blank">meck コトハジメ</a> を見てもらうとして、ここではMeckを使っている状態でオリジナルの関数を呼ぶ方法について書きます。</p>
+
+<h2>
+<span id="オリジナルの関数を呼び出す" class="fragment"></span><a href="#%E3%82%AA%E3%83%AA%E3%82%B8%E3%83%8A%E3%83%AB%E3%81%AE%E9%96%A2%E6%95%B0%E3%82%92%E5%91%BC%E3%81%B3%E5%87%BA%E3%81%99"><i class="fa fa-link"></i></a>オリジナルの関数を呼び出す</h2>
+
+<p>例えば <code>hackney:request/1</code> 呼び出しで、特定のURLが渡された場合だけmockの値を返し、それ以外の場合にオリジナルの関数を呼び出したいことがあります。</p>
+
+<p><code>meck:init/2</code> 呼び出し時に <code>passthrough</code> オプションを指定することで、mock化していない関数を呼び出した場合にオリジナルの関数を呼び出してくれますが、これは引数の値によって分岐してくれないので意味がありません。</p>
+
+<p>そこで <code>meck:passthrough/1</code> です。<br>
+<code>meck:passthrough/1</code> を使えば、これを実現できます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">Url</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="s">"http://example.com"</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+<span class="nn">meck</span><span class="p">:</span><span class="nf">new</span><span class="p">(</span><span class="n">hackney</span><span class="p">),</span>
+
+<span class="c">% "http://example.com" にアクセスした場合だけ特定の戻り値を返す。
+% それ以外の URL は元の関数を呼び出す。
+</span><span class="nn">meck</span><span class="p">:</span><span class="nf">expect</span><span class="p">(</span><span class="n">hackney</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="k">fun</span> <span class="p">(</span><span class="nv">Url</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="p">[],</span> <span class="n">client_ref</span><span class="p">};</span>
+                                  <span class="p">(</span><span class="nv">OtherUrl</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nn">meck</span><span class="p">:</span><span class="nf">passthrough</span><span class="p">([</span><span class="nv">OtherUrl</span><span class="p">])</span> <span class="k">end</span><span class="p">),</span>
+</pre></div></div>
+
+<p>なお <code>meck:passthrough/1</code> は <code>meck:expect/3</code> の関数内でしか使えません。<br>
+<code>meck:expect/3</code> の外でオリジナルの関数を呼ぶ方法は多分無いと思います。</p>

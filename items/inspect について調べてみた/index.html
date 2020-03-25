@@ -1,0 +1,316 @@
+<p>大体の Elixir 使いにとって、<a href="https://hexdocs.pm/elixir/Kernel.html#inspect/2" rel="nofollow noopener" target="_blank"><code>inspect</code></a> 関数は「どんな term でも文字列にしてくれる便利な奴」という認識だと思います。<br>
+実際それはそれで正しいのですが、もうちょっと詳しく調べてみると、めちゃめちゃ奥が深いことが分かりました。<br>
+調べたバージョンは Elixir 1.5.2 です。</p>
+
+<h2>
+<span id="出力フォーマットについて" class="fragment"></span><a href="#%E5%87%BA%E5%8A%9B%E3%83%95%E3%82%A9%E3%83%BC%E3%83%9E%E3%83%83%E3%83%88%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>出力フォーマットについて</h2>
+
+<p><code>inspect/2</code> は、普通は何もせず文字列に変換するだけですが、オプションを指定すると、もっといい感じにやってくれます。<br>
+詳細は <a href="https://hexdocs.pm/elixir/Inspect.Opts.html" rel="nofollow noopener" target="_blank"><code>Inspect.Opts</code> のドキュメント</a> に書いてる……と言いたいのですが、全然詳細に書いてくれてないので、ここに書いている内容の方が細かいです。<br>
+ここでは紹介していないオプションもあるので、一覧としては <code>Inspect.Opts</code> のドキュメントの方を見た方がいいでしょう。</p>
+
+<h3>
+<span id="limit" class="fragment"></span><a href="#limit"><i class="fa fa-link"></i></a><code>:limit</code>
+</h3>
+
+<p>タプル、ビットストリング、マップ、リストやその他コレクション全体で表示する要素数を指定します。<br>
+<strong><code>:infinity</code> を指定すると全て表示します</strong> 。<br>
+デフォルトは50個です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># 要素数３個までしか表示しない</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span> <span class="ss">limit:</span> <span class="mi">3</span>
+<span class="s2">"[1, 2, 3, ...]"</span>
+</pre></div></div>
+
+<p>「<code>inspect/2</code> したけど要素が途中で <code>...</code> になっててデバッグできない！」という場合は <code>:infinity</code> を指定するのがいいでしょう。<br>
+ただしログの量が激増して動作が大変なことになる可能性があるので注意して下さい。</p>
+
+<p>また、本当に正確に <code>:limit</code> の要素数しか表示しないという訳ではありません。<br>
+各要素を表示する時に <code>:limit</code> を1つずつ減らし、0以下になったら表示しないというのをひたすら再帰して実行していくというロジックなので、ネストしたデータの場合は以下のようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">[{</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">},</span> <span class="p">{</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">},</span> <span class="p">{</span><span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">9</span><span class="p">},</span> <span class="p">{</span><span class="mi">10</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">12</span><span class="p">}],</span> <span class="ss">limit:</span> <span class="mi">4</span>
+<span class="s2">"[{1, 2, 3}, {4, 5, ...}, {7, ...}, {10, ...}]"</span>
+</pre></div></div>
+
+<p><code>limit: 4</code> ですが、7要素表示されていることが分かります。<br>
+なぜこうなるのか、詳細に説明すると長くなりすぎるので省略します。<br>
+気になる人は <a href="https://github.com/elixir-lang/elixir/blob/05418eaa4bf4fa8473900741252d93d76ed3307b/lib/elixir/lib/inspect/algebra.ex#L556-L594" rel="nofollow noopener" target="_blank">この辺</a> を見てみるといいでしょう。</p>
+
+<h3>
+<span id="printable_limit" class="fragment"></span><a href="#printable_limit"><i class="fa fa-link"></i></a><code>:printable_limit</code>
+</h3>
+
+<p>文字列や文字のリストを表示するコードポイント数を指定します。<sup id="fnref1"><a href="#fn1" rel="footnote" title="Elixir 1.5.2 の Inspect.Opts のドキュメントにはバイト数って書いてるんだけど、コードを読んでみた らコードポイントで計算してた。ただし UTF-8 として無効な文字列であってもエスケープして表示しようとするので、コードポイントで数えるというのは正確な表現ではない。">1</a></sup><br>
+<strong><code>:infinity</code> を指定すると全て表示します</strong> 。<br>
+デフォルトは4096文字です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">[</span><span class="s2">"123456789"</span><span class="p">,</span> <span class="s2">"あいうえおかきく"</span><span class="p">],</span> <span class="ss">printable_limit:</span> <span class="mi">5</span>
+<span class="s2">"[</span><span class="se">\"</span><span class="s2">12345</span><span class="se">\"</span><span class="s2"> &lt;&gt; ..., </span><span class="se">\"</span><span class="s2">あいうえお</span><span class="se">\"</span><span class="s2"> &lt;&gt; ...]"</span>
+</pre></div></div>
+
+<p>「<code>inspect/2</code> したけど文字列が途中で ... になっててデバッグできない！」という場合は <code>:infinity</code> を指定するのがいいでしょう。<br>
+ ただしログ（ｒｙ</p>
+
+<p>上記の２つのオプションを合わせてやれば常に全ての term が出力されるので、覚えておくと便利でしょう。<br>
+ただし（ｒｙ</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">dump</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">inspect</span> <span class="n">value</span><span class="p">,</span> <span class="ss">limit:</span> <span class="ss">:infinity</span><span class="p">,</span> <span class="ss">printable_limit:</span> <span class="ss">:infinity</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h3>
+<span id="width" class="fragment"></span><a href="#width"><i class="fa fa-link"></i></a><code>:width</code>
+</h3>
+
+<p>表示する横幅を指定します。<br>
+ただし <strong><code>inspect/2</code> 関数の場合は <code>:pretty</code> が <code>true</code> の時しか効果がありません</strong>。<br>
+逆に <strong><a href="https://hexdocs.pm/elixir/IO.html#inspect/2" rel="nofollow noopener" target="_blank"><code>IO.inspect/2</code></a> 関数の場合は常に <code>:pretty</code> を無視します</strong>。</p>
+
+<p><code>:infinity</code> を指定すると横幅を気にせず表示します。<br>
+そのため、<code>IO.inspect/2</code> を使って <code>IO.puts "#{inspect value}"</code> と同じ表示にするなら <code>IO.inspect value, width: :infinity</code> のように <code>:infinity</code> を指定するのがいいでしょう。</p>
+
+<p>0 を指定した場合は、各要素毎に改行します。<br>
+デフォルトは80文字です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># inspect で :pretty を指定しない場合、:width は無視される</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="ss">width:</span> <span class="mi">0</span>              
+<span class="s2">"[1, 2, 3]"</span>
+
+<span class="c1"># pretty: true にすると width: 0 が有効になる</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="ss">pretty:</span> <span class="no">true</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span>
+<span class="s2">"[1,</span><span class="se">\n</span><span class="s2"> 2,</span><span class="se">\n</span><span class="s2"> 3]"</span>
+
+<span class="c1"># IO.inspect は pretty オプションを無視して常に pretty print する</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="ss">pretty:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span>
+<span class="p">[</span><span class="mi">1</span><span class="p">,</span>
+ <span class="mi">2</span><span class="p">,</span>
+ <span class="mi">3</span><span class="p">]</span>
+<span class="s2">"[1,</span><span class="se">\n</span><span class="s2"> 2,</span><span class="se">\n</span><span class="s2"> 3]"</span>
+</pre></div></div>
+
+<h3>
+<span id="binaries" class="fragment"></span><a href="#binaries"><i class="fa fa-link"></i></a><code>:binaries</code>
+</h3>
+
+<p>渡されたバイナリをどのように扱うかを指定します。<br>
+文字列も単なるバイナリなので、<code>inspect/2</code> ではこのオプションを見てどのように表示するかを決めます。<br>
+<code>:as_strings</code> を指定すると文字列として、<code>:as_binaries</code> を指定するとビット構文として表示します。</p>
+
+<p>デフォルトでは <code>:infer</code> になっていて、これは <a href="https://hexdocs.pm/elixir/String.html#printable?/2" rel="nofollow noopener" target="_blank"><code>String.printable?/2</code></a> が <code>true</code> の場合には文字列として、それ以外の場合はビット構文として出力します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s2">"olá"</span><span class="p">)</span>
+<span class="s2">"</span><span class="se">\"</span><span class="s2">olá</span><span class="se">\"</span><span class="s2">"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s2">"olá"</span> <span class="o">&lt;&gt;</span> <span class="o">&lt;&lt;</span><span class="mi">0</span><span class="o">&gt;&gt;</span><span class="p">)</span>
+<span class="s2">"&lt;&lt;111, 108, 195, 161, 0&gt;&gt;"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s2">"olá"</span> <span class="o">&lt;&gt;</span> <span class="o">&lt;&lt;</span><span class="mi">0</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="ss">binaries:</span> <span class="ss">:as_strings</span><span class="p">)</span>
+<span class="s2">"</span><span class="se">\"</span><span class="s2">olá</span><span class="se">\\</span><span class="s2">0</span><span class="se">\"</span><span class="s2">"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s2">"olá"</span><span class="p">,</span> <span class="ss">binaries:</span> <span class="ss">:as_binaries</span><span class="p">)</span>
+<span class="s2">"&lt;&lt;111, 108, 195, 161&gt;&gt;"</span>
+</pre></div></div>
+
+<h3>
+<span id="charlists" class="fragment"></span><a href="#charlists"><i class="fa fa-link"></i></a><code>:charlists</code>
+</h3>
+
+<p>渡されたリストをどのように扱うかを指定します。<br>
+文字のリストも単なるリストなので、<code>inspect/2</code> ではこのオプションを見てどのように表示するかを決めます。<br>
+<code>:as_charlists</code> を指定すると文字のリストとして、<code>:as_lists</code> を指定するとリストとして表示します。</p>
+
+<p>デフォルトでは <code>:infer</code> になっていて、これは <a href="https://github.com/elixir-lang/elixir/blob/05418eaa4bf4fa8473900741252d93d76ed3307b/lib/elixir/lib/inspect.ex#L309-L324" rel="nofollow noopener" target="_blank"><code>Inspect.List.printable?/2</code></a> が <code>true</code> の場合には文字のリストとして、それ以外の場合はリストとして出力します。<br>
+実装を見る限り、アルファベットや改行やタブ以外、例えば日本語が含まれている場合はリストとして表示されるようです。<br>
+<a href="https://qiita.com/melpon/items/ff11acc6a64268f78a90#%E6%96%87%E5%AD%97%E5%88%97%E3%81%AF%E3%82%B3%E3%83%BC%E3%83%89%E3%83%9D%E3%82%A4%E3%83%B3%E3%83%88%E3%81%AB%E3%81%AA%E3%82%8B" id="reference-ac313683c1db23f865b3">Erlang と似たような挙動</a> ですね。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">)</span>
+<span class="s2">"'bar'"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s1">'barバー'</span><span class="p">)</span>
+<span class="s2">"[98, 97, 114, 12496, 12540]"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s1">'barバー'</span><span class="p">,</span> <span class="ss">charlists:</span> <span class="ss">:as_charlists</span><span class="p">)</span>
+<span class="s2">"'barバー'"</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span><span class="p">(</span><span class="s1">'bar'</span><span class="p">,</span> <span class="ss">charlists:</span> <span class="ss">:as_lists</span><span class="p">)</span>
+<span class="s2">"[98, 97, 114]"</span>
+</pre></div></div>
+
+<h3>
+<span id="syntax_colors" class="fragment"></span><a href="#syntax_colors"><i class="fa fa-link"></i></a><code>:syntax_colors</code>
+</h3>
+
+<p>出力する文字列に色を付けることもできます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">%{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">},</span> <span class="ss">syntax_colors:</span> <span class="p">[</span><span class="ss">atom:</span> <span class="ss">:cyan</span><span class="p">,</span> <span class="ss">map:</span> <span class="ss">:magenta</span><span class="p">,</span> <span class="ss">number:</span> <span class="p">[</span><span class="ss">:black</span><span class="p">,</span> <span class="ss">:light_blue_background</span><span class="p">]]</span>
+<span class="s2">"</span><span class="se">\e</span><span class="s2">[35m%{</span><span class="se">\e</span><span class="s2">[0m</span><span class="se">\e</span><span class="s2">[36mx: </span><span class="se">\e</span><span class="s2">[0m</span><span class="se">\e</span><span class="s2">[30m</span><span class="se">\e</span><span class="s2">[104m10</span><span class="se">\e</span><span class="s2">[0m</span><span class="se">\e</span><span class="s2">[35m,</span><span class="se">\e</span><span class="s2">[0m </span><span class="se">\e</span><span class="s2">[36my: </span><span class="se">\e</span><span class="s2">[0m</span><span class="se">\e</span><span class="s2">[30m</span><span class="se">\e</span><span class="s2">[104m20</span><span class="se">\e</span><span class="s2">[0m</span><span class="se">\e</span><span class="s2">[35m}</span><span class="se">\e</span><span class="s2">[0m"</span>
+</pre></div></div>
+
+<p>これは、atom を <code>:cyan</code> で、マップを <code>:magenta</code> で、数値を <code>:black</code> かつ背景色を <code>:light_blue_background</code> で表示しています。</p>
+
+<p>見ての通り <a href="https://en.wikipedia.org/wiki/ANSI_escape_code" rel="nofollow noopener" target="_blank">ANSI エスケープコード</a> を使って色を付けていて、ANSI エスケープコードに対応したコンソールでこれを表示させると、以下のようになります。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F15eea137-b412-e72c-d5ed-d765ab3c74cb.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=4618e70491901a8dca1fe4a8c623286d" target="_blank" rel="nofollow noopener"><img width="522" alt="スクリーンショット 2017-11-21 10.59.12.png" src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F15eea137-b412-e72c-d5ed-d765ab3c74cb.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=4618e70491901a8dca1fe4a8c623286d" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/15eea137-b412-e72c-d5ed-d765ab3c74cb.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F15eea137-b412-e72c-d5ed-d765ab3c74cb.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=441d302e68247dcc8433a2438b839ed5 1x" loading="lazy"></a></p>
+
+<p><code>:syntax_colors</code> に渡すデータは、キーには任意の atom を入れられますが、標準では <code>:number</code>, <code>:atom</code>, <code>:regex</code>, <code>:tuple</code>, <code>:map</code>, <code>:list</code>, <code>:reset</code> しか使っていないので、独自に拡張しない限りはこれ以外を入れても効果はありません。それ以外のキーは独自に拡張した時に利用することになります。<br>
+値には <a href="https://hexdocs.pm/elixir/IO.ANSI.html" rel="nofollow noopener" target="_blank">IO.ANSI</a> に定義されている色の関数名（atom）か、任意の文字列、あるいはそれらのリスト（ネスト可）を指定可能です。</p>
+
+<h2>
+<span id="inspect-プロトコルについて" class="fragment"></span><a href="#inspect-%E3%83%97%E3%83%AD%E3%83%88%E3%82%B3%E3%83%AB%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>Inspect</code> プロトコルについて</h2>
+
+<p>自分で作った構造体は、デフォルトだと以下のように表示されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyStruct</span> <span class="k">do</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">:x</span><span class="p">,</span> <span class="ss">:y</span><span class="p">]</span>
+<span class="k">end</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">})</span>
+<span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">}</span>
+</pre></div></div>
+
+<p>基本的にはこれで問題ないと思いますが、この表示をカスタマイズすることもできます。<br>
+その場合、<code>Inspect</code> プロトコルを自分で実装することになります。</p>
+
+<h3>
+<span id="inspect-プロトコルを実装する" class="fragment"></span><a href="#inspect-%E3%83%97%E3%83%AD%E3%83%88%E3%82%B3%E3%83%AB%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a><code>Inspect</code> プロトコルを実装する</h3>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defimpl</span> <span class="no">Inspect</span><span class="p">,</span> <span class="ss">for:</span> <span class="no">MyStruct</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">inspect</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="s2">"(</span><span class="si">#{</span><span class="n">term</span><span class="o">.</span><span class="n">x</span><span class="si">}</span><span class="s2">, </span><span class="si">#{</span><span class="n">term</span><span class="o">.</span><span class="n">y</span><span class="si">}</span><span class="s2">)"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">})</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>term</code> には <code>MyStruct</code> 型の構造体が渡されるので、それらを文字列化するだけで実装できます。<br>
+これで <code>MyStruct</code> 構造体を独自のフォーマットで表示できました。</p>
+
+<h3>
+<span id="適切に改行を入れる" class="fragment"></span><a href="#%E9%81%A9%E5%88%87%E3%81%AB%E6%94%B9%E8%A1%8C%E3%82%92%E5%85%A5%E3%82%8C%E3%82%8B"><i class="fa fa-link"></i></a>適切に改行を入れる</h3>
+
+<p>ただし、これだと改行の処理が適切に行われません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">},</span> <span class="ss">pretty:</span> <span class="no">true</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span><span class="p">)</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+
+<span class="c1"># 本当は</span>
+<span class="c1"># (10,</span>
+<span class="c1">#  20)</span>
+<span class="c1"># になって欲しい</span>
+</pre></div></div>
+
+<p>適切な場所で改行してもらうには、どこが値の区切りであるかを <code>inspect/2</code> の戻り値で伝える必要があります。<br>
+区切り情報やネストの情報といったメタ情報を付けて返すために使うのが <a href="https://hexdocs.pm/elixir/Inspect.Algebra.html" rel="nofollow noopener" target="_blank"><code>Inspect.Algebra</code></a> です。</p>
+
+<p><code>Inspect.Algebra</code> を使うと、<code>:width</code> や <code>:limit</code> といったオプションによって適切に表示できるようになります。<br>
+複数のデータをうまいこと表示するために、丁度 <a href="https://hexdocs.pm/elixir/Inspect.Algebra.html#surround_many/6" rel="nofollow noopener" target="_blank"><code>Inspect.Algebra.surround_many/6</code></a> という便利な関数があるので、これを使いましょう。<sup id="fnref2"><a href="#fn2" rel="footnote" title="なお Inspect.Algebra.surround_many/6 は Elixir 1.6 で Soft Deprecated になり、Elixir 1.8 で Deprecated になる予定です。Elixir 1.6 以降は Inspect.Algebra.container_doc/6 を使いましょう。">2</a></sup></p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defimpl</span> <span class="no">Inspect</span><span class="p">,</span> <span class="ss">for:</span> <span class="no">MyStruct</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">inspect</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Inspect</span><span class="o">.</span><span class="no">Algebra</span><span class="o">.</span><span class="n">surround_many</span><span class="p">(</span><span class="s2">"("</span><span class="p">,</span> <span class="p">[</span><span class="n">term</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">term</span><span class="o">.</span><span class="n">y</span><span class="p">],</span> <span class="s2">")"</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="o">&amp;</span><span class="no">Inspect</span><span class="o">.</span><span class="n">inspect</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">})</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+
+<span class="c1"># 幅を小さくすれば適切に改行される</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">},</span> <span class="ss">pretty:</span> <span class="no">true</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span><span class="p">)</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span>
+ <span class="mi">20</span><span class="p">)</span>
+
+<span class="c1"># ネストしててもちゃんと動作する</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">100</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">200</span><span class="p">}},</span> <span class="ss">pretty:</span> <span class="no">true</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span><span class="p">)</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span>
+ <span class="p">(</span><span class="mi">100</span><span class="p">,</span>
+  <span class="mi">200</span><span class="p">))</span>
+
+<span class="c1"># limit もうまいこと動作する</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">100</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">200</span><span class="p">}},</span> <span class="ss">pretty:</span> <span class="no">true</span><span class="p">,</span> <span class="ss">width:</span> <span class="mi">0</span><span class="p">,</span> <span class="ss">limit:</span> <span class="mi">2</span><span class="p">)</span>
+<span class="p">(</span><span class="mi">10</span><span class="p">,</span>
+ <span class="p">(</span><span class="mi">100</span><span class="p">,</span>
+  <span class="o">...</span><span class="p">))</span>
+</pre></div></div>
+
+<p>これで横幅によって適切に改行が入り、しかもネスト時の行頭の空白も正しく動作しています。</p>
+
+<h3>
+<span id="色を付ける" class="fragment"></span><a href="#%E8%89%B2%E3%82%92%E4%BB%98%E3%81%91%E3%82%8B"><i class="fa fa-link"></i></a>色を付ける</h3>
+
+<p>もう少し頑張れば、色を付けることもできます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defimpl</span> <span class="no">Inspect</span><span class="p">,</span> <span class="ss">for:</span> <span class="no">MyStruct</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">inspect</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Inspect</span><span class="o">.</span><span class="no">Algebra</span><span class="o">.</span><span class="n">surround_many</span><span class="p">(</span>
+      <span class="no">Inspect</span><span class="o">.</span><span class="no">Algebra</span><span class="o">.</span><span class="n">color</span><span class="p">(</span><span class="s2">"("</span><span class="p">,</span> <span class="ss">:my_struct</span><span class="p">,</span> <span class="n">opts</span><span class="p">),</span>
+      <span class="p">[</span><span class="n">term</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">term</span><span class="o">.</span><span class="n">y</span><span class="p">],</span>
+      <span class="no">Inspect</span><span class="o">.</span><span class="no">Algebra</span><span class="o">.</span><span class="n">color</span><span class="p">(</span><span class="s2">")"</span><span class="p">,</span> <span class="ss">:my_struct</span><span class="p">,</span> <span class="n">opts</span><span class="p">),</span>
+      <span class="n">opts</span><span class="p">,</span>
+      <span class="o">&amp;</span><span class="no">Inspect</span><span class="o">.</span><span class="n">inspect</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span>
+      <span class="no">Inspect</span><span class="o">.</span><span class="no">Algebra</span><span class="o">.</span><span class="n">color</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="ss">:my_struct</span><span class="p">,</span> <span class="n">opts</span><span class="p">))</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">inspect</span> <span class="p">%</span><span class="no">MyStruct</span><span class="p">{</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">y:</span> <span class="mi">20</span><span class="p">},</span> <span class="ss">syntax_colors:</span> <span class="p">[</span><span class="ss">my_struct:</span> <span class="ss">:red_background</span><span class="p">]</span>
+<span class="s2">"</span><span class="se">\e</span><span class="s2">[41m(</span><span class="se">\e</span><span class="s2">[0m10</span><span class="se">\e</span><span class="s2">[41m,</span><span class="se">\e</span><span class="s2">[0m 20</span><span class="se">\e</span><span class="s2">[41m)</span><span class="se">\e</span><span class="s2">[0m"</span>
+</pre></div></div>
+
+<p>独自のキー <code>:my_struct</code> の色を使うようにしています。<br>
+そのため <code>:syntax_colors</code> オプションに <code>:my_struct</code> を定義することでいい感じに表示できます。</p>
+
+<p>コンソールで表示すると以下のようになります。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2e8f9cd5-3937-48a7-4da0-4f7833be63f9.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=8ad398518cef40ed60b47bb9222a98b7" target="_blank" rel="nofollow noopener"><img width="687" alt="スクリーンショット 2017-11-22 5.26.25.png" src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2e8f9cd5-3937-48a7-4da0-4f7833be63f9.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=8ad398518cef40ed60b47bb9222a98b7" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/2e8f9cd5-3937-48a7-4da0-4f7833be63f9.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2e8f9cd5-3937-48a7-4da0-4f7833be63f9.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=b3648cf295e622d40f4cd87dfdf8f946 1x" loading="lazy"></a></p>
+
+<h2>
+<span id="ioinspect2-について" class="fragment"></span><a href="#ioinspect2-%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>IO.inspect/2</code> について</h2>
+
+<p>出力フォーマットの説明でも書きましたが、<code>IO.puts(inspect value)</code> と <code>IO.inspect value</code> は同じ出力にはなりません。<br>
+<code>IO.inspect/2</code> は、<code>IO.puts(inspect value)</code> と以下の点で異なります。</p>
+
+<ul>
+<li>
+<code>IO.inspect/2</code> は <code>:pretty</code> オプションを無視して常に pretty print する。</li>
+<li>
+<code>IO.inspect/2</code> は <code>:label</code> オプションが使える。使うと <code>"my_label: value"</code> のように表示される。</li>
+<li>
+<code>IO.inspect/2</code> は戻り値として、与えられた値を返す。そのため、パイプラインの途中でちょっと値を見るということが簡単にできる。</li>
+</ul>
+
+<p>ドキュメントに書いているように、<code>IO.inspect/2</code> の <code>:label</code> と戻り値を利用することで、パイプライン途中の値をいい感じに覗き見できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+<span class="o">|&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="ss">label:</span> <span class="s2">"before"</span><span class="p">)</span>
+<span class="o">|&gt;</span> <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="o">&amp;</span><span class="p">(</span><span class="nv">&amp;1</span> <span class="o">*</span> <span class="mi">2</span><span class="p">))</span>
+<span class="o">|&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="ss">label:</span> <span class="s2">"after"</span><span class="p">)</span>
+<span class="o">|&gt;</span> <span class="no">Enum</span><span class="o">.</span><span class="n">sum</span>
+</pre></div></div>
+
+<p>以下のように出力されます。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>before: [1, 2, 3]
+after: [2, 4, 6]
+</pre></div></div>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p><code>inspect/2</code> の深淵に飲み込まれないように注意しましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>Elixir 1.5.2 の <code>Inspect.Opts</code> のドキュメントにはバイト数って書いてるんだけど、<a href="https://github.com/elixir-lang/elixir/blob/05418eaa4bf4fa8473900741252d93d76ed3307b/lib/elixir/lib/inspect.ex#L170-L176" rel="nofollow noopener" target="_blank">コードを読んでみた</a> らコードポイントで計算してた。ただし UTF-8 として無効な文字列であってもエスケープして表示しようとするので、コードポイントで数えるというのは正確な表現ではない。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>なお <code>Inspect.Algebra.surround_many/6</code> は Elixir 1.6 で Soft Deprecated になり、Elixir 1.8 で Deprecated になる予定です。Elixir 1.6 以降は <code>Inspect.Algebra.container_doc/6</code> を使いましょう。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

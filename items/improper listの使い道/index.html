@@ -1,0 +1,155 @@
+<p>終端が <code>[]</code> で終わってないリストを improper list（不適切なリスト）と呼びます。</p>
+
+<p>この improper list、こうやって説明されているドキュメントは沢山あるものの、一体こんなリストをどういう用途で使うのかが分からなかったので調べてみました。</p>
+
+<h2>
+<span id="標準ライブラリ" class="fragment"></span><a href="#%E6%A8%99%E6%BA%96%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA"><i class="fa fa-link"></i></a>標準ライブラリ</h2>
+
+<p>標準ライブラリの中を "improper" で検索し、データ構造として improper list を使ってそうな部分を調べてみたところ、１箇所だけ見つけました。<sup id="fnref1"><a href="#fn1" rel="footnote" title="iolist_to_binary/1やlist_to_binary/1は improper list を受け取りますが、improper list のデータ構造を作っている訳ではないので省いてます。">1</a></sup></p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">rand.erl</span></div>
+<div class="highlight"><pre><span class="p">-</span><span class="ni">type</span> <span class="nf">exsplus_state</span><span class="p">()</span> <span class="p">::</span> <span class="nf">nonempty_improper_list</span><span class="p">(</span><span class="nf">uint58</span><span class="p">(),</span> <span class="nf">uint58</span><span class="p">()).</span>
+
+<span class="c">%% Advance xorshift116+ state for one step and generate 58bit unsigned integer
+</span><span class="p">-</span><span class="ni">spec</span> <span class="nf">exsplus_next</span><span class="p">(</span><span class="nf">exsplus_state</span><span class="p">())</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="nf">uint58</span><span class="p">(),</span> <span class="nf">exsplus_state</span><span class="p">()}.</span>
+<span class="nf">exsplus_next</span><span class="p">([</span><span class="nv">S1</span><span class="p">|</span><span class="nv">S0</span><span class="p">])</span> <span class="o">-&gt;</span>
+    <span class="c">%% Note: members s0 and s1 are swapped here
+</span>    <span class="nv">S11</span> <span class="o">=</span> <span class="p">(</span><span class="nv">S1</span> <span class="ow">bxor</span> <span class="p">(</span><span class="nv">S1</span> <span class="ow">bsl</span> <span class="mi">24</span><span class="p">))</span> <span class="ow">band</span> <span class="o">?</span><span class="nv">UINT58MASK</span><span class="p">,</span>
+    <span class="nv">S12</span> <span class="o">=</span> <span class="nv">S11</span> <span class="ow">bxor</span> <span class="nv">S0</span> <span class="ow">bxor</span> <span class="p">(</span><span class="nv">S11</span> <span class="ow">bsr</span> <span class="mi">11</span><span class="p">)</span> <span class="ow">bxor</span> <span class="p">(</span><span class="nv">S0</span> <span class="ow">bsr</span> <span class="mi">41</span><span class="p">),</span>
+    <span class="p">{(</span><span class="nv">S0</span> <span class="o">+</span> <span class="nv">S12</span><span class="p">)</span> <span class="ow">band</span> <span class="o">?</span><span class="nv">UINT58MASK</span><span class="p">,</span> <span class="p">[</span><span class="nv">S0</span><span class="p">|</span><span class="nv">S12</span><span class="p">]}.</span>
+</pre></div>
+</div>
+
+<p>乱数アルゴリズム Xorshift116+ の実装のようです。<br>
+<code>exsplus_state/0</code>型が improper list になっています。<br>
+ただ、これって単純にタプル型でいいのでは？という気もします。</p>
+
+<h2>
+<span id="データ構造を見る" class="fragment"></span><a href="#%E3%83%87%E3%83%BC%E3%82%BF%E6%A7%8B%E9%80%A0%E3%82%92%E8%A6%8B%E3%82%8B"><i class="fa fa-link"></i></a>データ構造を見る</h2>
+
+<p>タプルで良さそうな部分を improper list にするということは、メモリや速度上、きっと タプルよりもimproper list の方が効率がいいに違いないと思って、実装を見てみました。</p>
+
+<h3>
+<span id="メモリ使用量" class="fragment"></span><a href="#%E3%83%A1%E3%83%A2%E3%83%AA%E4%BD%BF%E7%94%A8%E9%87%8F"><i class="fa fa-link"></i></a>メモリ使用量</h3>
+
+<p>58bitの整数を improper list に格納すると、以下の様なデータ構造になるようです。<sup id="fnref2"><a href="#fn2" rel="footnote" title="64bit環境でのデータ構造です。32bitの場合は上位32bitは使えません。">2</a></sup></p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>| pointer (62bit)     | 0 | 1 |   ---&gt;  | small value (60bit)      | 1 | 1 | 1 | 1 |
+                                        | small value (60bit)      | 1 | 1 | 1 | 1 |
+</pre></div></div>
+
+<p>合計3ワードを使っています。<br>
+ルートの値は引き回す時に使う値なので、アロケーションしているのは２ワードだけです。</p>
+
+<p>同様に58bitの整数を２要素のタプルに格納すると、以下の様なデータ構造になるようです。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>| pointer (62bit)     | 1 | 0 |   ---&gt;  | arityval (58bit) | 0 | 0 | 0 | 0 | 0 | 0 |
+                                        | small value (60bit)      | 1 | 1 | 1 | 1 |
+                                        | small value (60bit)      | 1 | 1 | 1 | 1 |
+</pre></div></div>
+
+<p>合計4ワードを使っています。<br>
+ルートの値は引き回す時に使う値なので、アロケーションしているのは３ワードだけです。<br>
+タプルには先頭に要素数を含んでいるため、タプルより improper list の方が1ワード分少なくて済んでいます。</p>
+
+<p>つまり <strong>メモリ効率はタプルより improper list の方が良い</strong> ということになります。</p>
+
+<p>これは <code>erts_debug:size/1</code> を使っても同じ結果が得られます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">erts_debug</span><span class="p">:</span><span class="nb">size</span><span class="p">([</span><span class="mi">1</span><span class="p">|</span><span class="mi">2</span><span class="p">]).</span>
+<span class="mi">2</span>
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">erts_debug</span><span class="p">:</span><span class="nb">size</span><span class="p">({</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">}).</span>
+<span class="mi">3</span>
+</pre></div></div>
+
+<h3>
+<span id="処理速度" class="fragment"></span><a href="#%E5%87%A6%E7%90%86%E9%80%9F%E5%BA%A6"><i class="fa fa-link"></i></a>処理速度</h3>
+
+<p>次は、処理速度を見てみましょう。<br>
+このデータ構造の下位2ビットはプライマリタグと呼ばれていて、以下の意味を持ちます。</p>
+
+<ul>
+<li>0 0 - ヘッダ（header）</li>
+<li>0 1 - リスト（list）</li>
+<li>1 0 - ボックス化済み（boxed）</li>
+<li>1 1 - 即値（immediate）</li>
+</ul>
+
+<p>プライマリタグにリストがあるので、リストの場合は以下の処理を書くだけでリストかどうかを判別できます。</p>
+
+<ul>
+<li>値の下位２ビットを取得し、0 1 であればリスト</li>
+</ul>
+
+<p>タプルの場合、下位2ビットが 1 0 (0x2) になっています。これは「ボックス化済み」という意味で、残りの62ビットがポインタになっているという意味です。<br>
+詳細な意味はデリファレンスしてみないと分かりません。</p>
+
+<p>これをデリファレンスした後、同様に下位2ビットを読みます。0 0 だった場合はヘッダという意味になり、この場合はヘッダ用のタグを更に4ビット持っています。<br>
+この4ビットに応じて値の意味が変わり、0 0 0 0 だった場合は「タプルの要素数」という意味になります。<br>
+この値はタプルかどうかを判別するためのタグにもなっているので、これを利用してタプルかどうかを判断します。</p>
+
+<p>そのため、タプルかどうかを調べるためには以下の処理を書く必要があります。</p>
+
+<ul>
+<li>値の下位２ビットを取得し、1 0 であるかを確認する</li>
+<li>ポインタをデリファレンスする</li>
+<li>その値の下位2ビットを取得し、0 0 であるかを確認する</li>
+<li>さらに4ビットを読み、0 0 0 0 であればタプル</li>
+</ul>
+
+<p>このような手順を踏むため、少なくともリストかタプルかを判別する処理においては、<strong>タプルよりリストの方が早い</strong> ということになります。<sup id="fnref3"><a href="#fn3" rel="footnote" title="単にタプルかどうかを判別するだけなら、最後の２つの手順については「下位6ビットを取得し、0 0 0 0 0 0 であればタプル」で可能なので、実際は３つの手順で出来ます。">3</a></sup></p>
+
+<p>標準ライブラリの <code>exsplus_state/0</code> 型が improper list で保存しているのは、メモリ使用量が少なく、高速に処理できるからだと考えられます。</p>
+
+<p>なお、このデータ構造の各ビット意味に関しては <a href="https://blog.edfine.io/blog/2016/06/28/erlang-data-representation/" rel="nofollow noopener" target="_blank">Erlang's Internal Data Representation - Detail oriented</a> の画像がすごく分かりやすかったので、内部実装が気になる場合は見てみるといいかもしれません。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<ul>
+<li>２要素を格納する場合、タプルより improper list の方がメモリ使用量が少ない</li>
+<li>速度的にも２要素のタプルよりimproper listの方が早い</li>
+</ul>
+
+<p>ただし、あるリストが improper list であることは、ユーザはあまり想定しない事態でしょう。<br>
+そのため、この構造はモジュール内で閉じ、外に公開しないようにしておいた方がいいと思います。</p>
+
+<p>また、メモリ使用量が少ないとはいえ、各要素の値が10000バイトのバイナリだった場合なんかは、1ワードを省略したところで大した効果は見込めません。<br>
+速度的にも、よっぽど参照するコードを書かなければ、ここを改善した所でそこまで大きな効果は無いでしょう。</p>
+
+<p>そのため、improper listを使うのは、以下の条件を満たした場合だけで良さそうです。</p>
+
+<ul>
+<li>本当にカツカツまで高速化、メモリ使用量を減らしたい要求がある</li>
+<li>そのデータ構造は外に公開するものではない</li>
+</ul>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://www.quora.com/How-is-the-Erlang-list-represented-in-memory" rel="nofollow noopener" target="_blank">How is the Erlang list represented in memory?</a></li>
+<li><a href="http://erlang.org/doc/efficiency_guide/advanced.html#id70479" rel="nofollow noopener" target="_blank">10.1  Memory</a></li>
+<li><a href="https://github.com/erlang/otp/blob/OTP-19.1.6/erts/emulator/beam/erl_term.h" rel="nofollow noopener" target="_blank">otp/erl_term.h at OTP-19.1.6 · erlang/otp</a></li>
+<li><a href="http://stackoverflow.com/questions/5088575/practical-use-of-improper-lists-in-erlang-perhaps-all-functional-languages" rel="nofollow noopener" target="_blank">Practical use of improper lists in Erlang (perhaps all functional languages) - Stack Overflow</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>iolist_to_binary/1</code>や<code>list_to_binary/1</code>は improper list を受け取りますが、improper list のデータ構造を作っている訳ではないので省いてます。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>64bit環境でのデータ構造です。32bitの場合は上位32bitは使えません。 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>単にタプルかどうかを判別するだけなら、最後の２つの手順については「下位6ビットを取得し、0 0 0 0 0 0 であればタプル」で可能なので、実際は３つの手順で出来ます。 <a href="#fnref3">↩</a></p>
+</li>
+
+</ol>
+</div>

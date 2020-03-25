@@ -1,0 +1,254 @@
+<p>Erlangではwhen区の中で使える関数が限定されています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">is_hoge</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="n">hoge</span><span class="p">]),</span>
+  <span class="n">true</span><span class="p">.</span>
+
+<span class="nf">func</span><span class="p">()</span> <span class="k">when</span> <span class="nf">is_hoge</span><span class="p">()</span> <span class="o">-&gt;</span>
+  <span class="n">do_something</span><span class="p">.</span>
+</pre></div></div>
+
+<p>これで<code>func()</code>を呼び出そうとすると、以下のようなエラーが出ます。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>prog.erl:5: call to local/imported function is_hoge/0 is illegal in guard
+</pre></div></div>
+
+<p><code>when</code>区で使える関数は、ホワイトリスト方式で決められています。<br>
+つまり<code>when</code>区では、特定の関数以外は使えません。<br>
+そのためこのようなエラーが出るのです。</p>
+
+<p>これは<code>when</code>の中で関数呼び出しをした際に、何らかの副作用が出てしまうのを防ぐためです。</p>
+
+<p>ではどの関数が使えるのか、というのが気になるところです。<br>
+<a href="http://erlang.org/doc/reference_manual/expressions.html#id84484" rel="nofollow noopener" target="_blank">ドキュメント</a>には "Arithmetic expressions" や "Boolean expressions" などが書かれていますが、それが具体的にどの関数なのかを調べてみました。</p>
+
+<p>以下の通りです。</p>
+
+<h2>
+<span id="bif" class="fragment"></span><a href="#bif"><i class="fa fa-link"></i></a>BIF</h2>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">BIF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">abs/1</td>
+</tr>
+<tr>
+<td style="text-align: center">float/1</td>
+</tr>
+<tr>
+<td style="text-align: center">trunc/1</td>
+</tr>
+<tr>
+<td style="text-align: center">round/1</td>
+</tr>
+<tr>
+<td style="text-align: center">length/1</td>
+</tr>
+<tr>
+<td style="text-align: center">hd/1</td>
+</tr>
+<tr>
+<td style="text-align: center">tl/1</td>
+</tr>
+<tr>
+<td style="text-align: center">size/1</td>
+</tr>
+<tr>
+<td style="text-align: center">bit_size/1</td>
+</tr>
+<tr>
+<td style="text-align: center">byte_size/1</td>
+</tr>
+<tr>
+<td style="text-align: center">element/2</td>
+</tr>
+<tr>
+<td style="text-align: center">self/0</td>
+</tr>
+<tr>
+<td style="text-align: center">map_size/1</td>
+</tr>
+<tr>
+<td style="text-align: center">node/{0,1}</td>
+</tr>
+<tr>
+<td style="text-align: center">tuple_size/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_atom/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_binary/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_bitstring/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_boolean/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_float/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_function/{1,2}</td>
+</tr>
+<tr>
+<td style="text-align: center">is_integer/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_list/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_map/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_number/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_pid/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_port/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_reference/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_tuple/1</td>
+</tr>
+<tr>
+<td style="text-align: center">is_record/{2,3}</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_part/{2,3}</td>
+</tr>
+</tbody>
+</table>
+
+<p><code>binary_part/{2,3}</code>はドキュメントには載っていません。<br>
+どこかの新しいバージョンで追加されたんでしょうか。</p>
+
+<h2>
+<span id="算術演算子" class="fragment"></span><a href="#%E7%AE%97%E8%A1%93%E6%BC%94%E7%AE%97%E5%AD%90"><i class="fa fa-link"></i></a>算術演算子</h2>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">算術演算子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">'+'/{1,2}</td>
+</tr>
+<tr>
+<td style="text-align: center">'-'/{1,2}</td>
+</tr>
+<tr>
+<td style="text-align: center">'*'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'/'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'bnot'/1</td>
+</tr>
+<tr>
+<td style="text-align: center">'div'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'rem'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'band'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'bor'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'bxor'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'bsl'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'bsr'/2</td>
+</tr>
+</tbody>
+</table>
+
+<h2>
+<span id="bool演算子" class="fragment"></span><a href="#bool%E6%BC%94%E7%AE%97%E5%AD%90"><i class="fa fa-link"></i></a>bool演算子</h2>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">bool演算子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">'not'/1</td>
+</tr>
+<tr>
+<td style="text-align: center">'and'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'or'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'xor'/2</td>
+</tr>
+</tbody>
+</table>
+
+<h2>
+<span id="比較演算子" class="fragment"></span><a href="#%E6%AF%94%E8%BC%83%E6%BC%94%E7%AE%97%E5%AD%90"><i class="fa fa-link"></i></a>比較演算子</h2>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">比較演算子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">'=='/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'/='/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'=&lt;'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'&lt;'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'&gt;='/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'&gt;'/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'=:='/2</td>
+</tr>
+<tr>
+<td style="text-align: center">'=/='/2</td>
+</tr>
+</tbody>
+</table>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/doc/reference_manual/expressions.html#id84484" rel="nofollow noopener" target="_blank">8.25  Guard Sequences</a></li>
+<li><a href="https://github.com/erlang/otp/blob/cc25f4cd184ca41ba935e1d2d14eb250e68f11d2/lib/compiler/src/core_lint.erl#L314" rel="nofollow noopener" target="_blank">otp/core_lint.erl at cc25f4cd184ca41ba935e1d2d14eb250e68f11d2 · erlang/otp</a></li>
+<li><a href="https://github.com/erlang/otp/blob/cc25f4cd184ca41ba935e1d2d14eb250e68f11d2/lib/stdlib/src/erl_internal.erl" rel="nofollow noopener" target="_blank">otp/erl_internal.erl at cc25f4cd184ca41ba935e1d2d14eb250e68f11d2 · erlang/otp</a></li>
+</ul>

@@ -1,0 +1,61 @@
+<p>私は private な関数もテストしたい派なので、<code>defp</code> で定義した関数をテストしたくなることがよくあります。</p>
+
+<p><code>defp</code> で定義した関数をテストする方法は、調べてみるとすぐに見つかります。</p>
+
+<ul>
+<li><a href="https://stackoverflow.com/a/44125023" rel="nofollow noopener" target="_blank">Is there a way to test private functions in modules in ExUnit of Elixir? - Stack Overflow</a></li>
+</ul>
+
+<p>に書いてあるように、<a href="https://hexdocs.pm/elixir/Module.html#module-compile" rel="nofollow noopener" target="_blank"><code>@compile</code></a> 属性に <code>:export_all</code> を指定するだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="nv">@compile</span> <span class="k">if</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span> <span class="o">==</span> <span class="ss">:test</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="ss">:export_all</span>
+
+  <span class="k">defp</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで <code>defp</code> の関数も含めて全て export されるようになります。</p>
+
+<p>ただし、これをすると以下の警告が出ます。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>warning: export_all flag enabled - all functions will be exported
+  lib/my_app/my_app.ex:1
+</pre></div></div>
+
+<p><code>:export_all</code> が指定されていると警告が出るようです。<br>
+この警告は、特に <code>:warnings_as_errors</code> オプションを有効にしてると、ずっとコンパイルが通らなくなってしまいます。<sup id="fnref1"><a href="#fn1" rel="footnote" title=":warnings_as_errors は警告をエラーとして報告する機能で、多人数で真面目なプロダクトを作るなら必ず付けておくべきオプションです。">1</a></sup></p>
+
+<p>何か良い方法が無いかということで、そもそも <code>@compile</code> には何を指定できるかというのを調べると、<code>Module</code> のドキュメントに <a href="https://hexdocs.pm/elixir/Module.html#module-compile" rel="nofollow noopener" target="_blank">Compile options</a> という項目がありました。<br>
+それによると <code>:debug_info</code> や <code>:inline</code> が指定できるらしいですが、更に <a href="http://erlang.org/doc/man/compile.html#file-2" rel="nofollow noopener" target="_blank">Erlang の数々のコンパイルオプション</a>も指定できるようです。</p>
+
+<p>それをよく眺めてみると <code>:nowarn_export_all</code> というフラグがありました。<br>
+これを使って、以下のように書くことで <code>:export_all</code> の警告が消せます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">if</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span> <span class="o">==</span> <span class="ss">:test</span> <span class="k">do</span>
+    <span class="nv">@compile</span> <span class="ss">:export_all</span>
+    <span class="nv">@compile</span> <span class="ss">:nowarn_export_all</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで無事 private な関数がテストできるようになりました。<br>
+private な関数をテストする派の人はそこそこ居ると思うので、必要であればこのように書くといいでしょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>:warnings_as_errors</code> は警告をエラーとして報告する機能で、多人数で真面目なプロダクトを作るなら必ず付けておくべきオプションです。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

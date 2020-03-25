@@ -1,0 +1,308 @@
+<p>Phoenix で、受け取った URL をどうやってディスパッチしているのか気になったので、<code>mix phoenix.new hello_world</code> で生成したプロジェクトから、順番に読んでいった。</p>
+
+<h2>
+<span id="helloworldstart2" class="fragment"></span><a href="#helloworldstart2"><i class="fa fa-link"></i></a>HelloWorld.start/2</h2>
+
+<p><code>hello_world/lib/hello_world.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span> <span class="k">do</span>
+  <span class="o">...</span>
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">...</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="c1"># Start the Ecto repository</span>
+      <span class="n">supervisor</span><span class="p">(</span><span class="no">HelloWorld</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span> <span class="p">[]),</span>
+      <span class="c1"># Start the endpoint when the application starts</span>
+      <span class="n">supervisor</span><span class="p">(</span><span class="no">HelloWorld</span><span class="o">.</span><span class="no">Endpoint</span><span class="p">,</span> <span class="p">[]),</span>
+    <span class="p">]</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="o">...</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>HelloWorld.Repo</code> と <code>HelloWorld.Endpoint</code> をスーパーバイザとして起動してる。<br>
+エンドポイントは、設定を書いてここに supervisor を追加すれば何個でも追加できるっぽい。</p>
+
+<h2>
+<span id="helloworldendpoint" class="fragment"></span><a href="#helloworldendpoint"><i class="fa fa-link"></i></a>HelloWorld.Endpoint</h2>
+
+<p><code>HelloWorld.Endpoint.start_link/0</code> は単純に <code>Phoenix.Endpoint.Supervisor.start_link/2</code> を呼んでるだけで、<code>Phoenix.Endpoint.Supervisor</code> は以下の様になっている。</p>
+
+<p><code>phoenix/lib/phoenix/endpoint/supervisor.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">def</span> <span class="n">start_link</span><span class="p">(</span><span class="n">otp_app</span><span class="p">,</span> <span class="n">mod</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">{</span><span class="n">otp_app</span><span class="p">,</span> <span class="n">mod</span><span class="p">},</span> <span class="ss">name:</span> <span class="n">mod</span><span class="p">)</span> <span class="k">do</span>
+      <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">=</span> <span class="n">ok</span> <span class="o">-&gt;</span>
+        <span class="n">warmup</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
+        <span class="n">ok</span>
+      <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">=</span> <span class="n">error</span> <span class="o">-&gt;</span>
+        <span class="n">error</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="o">...</span>
+
+  <span class="k">def</span> <span class="n">init</span><span class="p">({</span><span class="n">otp_app</span><span class="p">,</span> <span class="n">mod</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">id</span> <span class="o">=</span> <span class="ss">:crypto</span><span class="o">.</span><span class="n">strong_rand_bytes</span><span class="p">(</span><span class="mi">16</span><span class="p">)</span> <span class="o">|&gt;</span> <span class="no">Base</span><span class="o">.</span><span class="n">encode64</span>
+    <span class="n">conf</span> <span class="o">=</span> <span class="p">[</span><span class="ss">endpoint_id:</span> <span class="n">id</span><span class="p">]</span> <span class="o">++</span> <span class="n">config</span><span class="p">(</span><span class="n">otp_app</span><span class="p">,</span> <span class="n">mod</span><span class="p">)</span>
+
+    <span class="n">conf</span> <span class="o">=</span>
+      <span class="k">case</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">conf</span><span class="p">,</span> <span class="ss">:on_init</span><span class="p">)</span> <span class="k">do</span>
+        <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="p">{</span><span class="n">mod</span><span class="p">,</span> <span class="n">fun</span><span class="p">,</span> <span class="n">args</span><span class="p">}}</span> <span class="o">-&gt;</span>
+          <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">conf</span><span class="p">}</span> <span class="o">=</span> <span class="n">apply</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">fun</span><span class="p">,</span> <span class="p">[</span><span class="n">conf</span> <span class="o">|</span> <span class="n">args</span><span class="p">])</span>
+          <span class="n">conf</span>
+        <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">other</span><span class="p">}</span> <span class="o">-&gt;</span>
+          <span class="k">raise</span> <span class="no">ArgumentError</span><span class="p">,</span> <span class="s2">"invalid :on_init option for </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">mod</span><span class="si">}</span><span class="s2">. "</span> <span class="o">&lt;&gt;</span>
+                               <span class="s2">"Expected a tuple with module, function and args, got: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">other</span><span class="si">}</span><span class="s2">"</span>
+        <span class="ss">:error</span> <span class="o">-&gt;</span>
+          <span class="n">conf</span>
+      <span class="k">end</span>
+
+    <span class="n">server?</span> <span class="o">=</span> <span class="n">server?</span><span class="p">(</span><span class="n">conf</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">server?</span> <span class="ow">and</span> <span class="n">conf</span><span class="p">[</span><span class="ss">:code_reloader</span><span class="p">]</span> <span class="k">do</span>
+      <span class="no">Phoenix</span><span class="o">.</span><span class="no">CodeReloader</span><span class="o">.</span><span class="no">Server</span><span class="o">.</span><span class="n">check_symlinks</span><span class="p">()</span>
+    <span class="k">end</span>
+
+    <span class="n">children</span> <span class="o">=</span>
+      <span class="n">pubsub_children</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">conf</span><span class="p">)</span> <span class="o">++</span>
+      <span class="n">config_children</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">conf</span><span class="p">,</span> <span class="n">otp_app</span><span class="p">)</span> <span class="o">++</span>
+      <span class="n">server_children</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">conf</span><span class="p">,</span> <span class="n">server?</span><span class="p">)</span> <span class="o">++</span>
+      <span class="n">watcher_children</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">conf</span><span class="p">,</span> <span class="n">server?</span><span class="p">)</span>
+
+    <span class="n">supervise</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p><code>Phoenix.Endpoint.Supervisor</code> は pubsub, config, server, watcher の4種類の子プロセスを作っている。</p>
+
+<p><code>server?</code> が <code>true</code> なら <code>server_children</code> によって <code>Phoenix.Endpoint.Handler</code> が起動するようになる。</p>
+
+<p><code>phoenix/lib/phoenix/endpoint/handler.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="nv">@doc</span> <span class="no">false</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">({</span><span class="n">otp_app</span><span class="p">,</span> <span class="n">endpoint</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">handler</span>  <span class="o">=</span> <span class="n">endpoint</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="ss">:handler</span><span class="p">)</span>
+    <span class="n">children</span> <span class="o">=</span>
+      <span class="n">for</span> <span class="p">{</span><span class="n">scheme</span><span class="p">,</span> <span class="n">port</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="p">[</span><span class="ss">http:</span> <span class="mi">4000</span><span class="p">,</span> <span class="ss">https:</span> <span class="mi">4040</span><span class="p">],</span>
+          <span class="n">config</span> <span class="o">=</span> <span class="n">endpoint</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">scheme</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">handler</span><span class="o">.</span><span class="n">child_spec</span><span class="p">(</span><span class="n">scheme</span><span class="p">,</span> <span class="n">endpoint</span><span class="p">,</span> <span class="n">default</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">otp_app</span><span class="p">,</span> <span class="n">port</span><span class="p">))</span>
+      <span class="k">end</span>
+    <span class="n">supervise</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p><code>endpoint.config(:handler)</code> で得られるのは、特に設定して無ければデフォルトの <code>Phoenix.Endpoint.CowboyHandler</code> である。<br>
+<code>Phoenix.Endpoint.CowboyHandler.child_spec/3</code> で、受けたリクエストを <code>Plug.Adapters.Cowboy.Handler</code> に渡す設定をしている。</p>
+
+<p><code>phoenix/lib/phoenix/endpoint/cowboy_handler.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">def</span> <span class="n">child_spec</span><span class="p">(</span><span class="n">scheme</span><span class="p">,</span> <span class="n">endpoint</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">...</span>
+    <span class="n">dispatches</span> <span class="o">=</span>
+      <span class="n">dispatches</span> <span class="o">++</span> <span class="p">[{</span><span class="ss">:_</span><span class="p">,</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Cowboy</span><span class="o">.</span><span class="no">Handler</span><span class="p">,</span> <span class="p">{</span><span class="n">endpoint</span><span class="p">,</span> <span class="p">[]}}]</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p>これで起動時にどういう設定をしているかが分かった。</p>
+
+<p>次はリクエストを受けた際にどうやってディスパッチするかである。<br>
+リクエストを受けると <code>Plug.Adapters.Cowboy.Handler.{init/3, upgrade/4}</code> に渡され、そこで <code>HelloWorld.EndPoint.call/2</code> を呼ぶようになっている。</p>
+
+<p><code>plug/lib/adapters/cowboy/handler.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">def</span> <span class="n">init</span><span class="p">({</span><span class="n">transport</span><span class="p">,</span> <span class="ss">:http</span><span class="p">},</span> <span class="n">req</span><span class="p">,</span> <span class="p">{</span><span class="n">plug</span><span class="p">,</span> <span class="n">opts</span><span class="p">})</span> <span class="ow">when</span> <span class="n">transport</span> <span class="ow">in</span> <span class="p">[</span><span class="ss">:tcp</span><span class="p">,</span> <span class="ss">:ssl</span><span class="p">]</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:upgrade</span><span class="p">,</span> <span class="ss">:protocol</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">req</span><span class="p">,</span> <span class="p">{</span><span class="n">transport</span><span class="p">,</span> <span class="n">plug</span><span class="p">,</span> <span class="n">opts</span><span class="p">}}</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">upgrade</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">{</span><span class="n">transport</span><span class="p">,</span> <span class="n">plug</span><span class="p">,</span> <span class="n">opts</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="nv">@connection</span><span class="o">.</span><span class="n">conn</span><span class="p">(</span><span class="n">req</span><span class="p">,</span> <span class="n">transport</span><span class="p">)</span>
+    <span class="k">try</span> <span class="k">do</span>
+      <span class="p">%{</span><span class="ss">adapter:</span> <span class="p">{</span><span class="nv">@connection</span><span class="p">,</span> <span class="n">req</span><span class="p">}}</span> <span class="o">=</span>
+        <span class="n">conn</span>
+        <span class="o">|&gt;</span> <span class="n">plug</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span>
+        <span class="o">|&gt;</span> <span class="n">maybe_send</span><span class="p">(</span><span class="n">plug</span><span class="p">)</span>
+
+      <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">req</span><span class="p">,</span> <span class="p">[{</span><span class="ss">:result</span><span class="p">,</span> <span class="ss">:ok</span><span class="p">}</span> <span class="o">|</span> <span class="n">env</span><span class="p">]}</span>
+    <span class="k">catch</span>
+      <span class="o">...</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p><code>HelloWorld.EndPoint.call/2</code> の実装は <code>Phoenix.Endpoint</code> にあり、以下の様になっている。</p>
+
+<p><code>phoenix/lib/phoenix/endpoint.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="nv">@doc</span> <span class="no">false</span>
+  <span class="k">defmacro</span> <span class="n">__before_compile__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">...</span>
+
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">call:</span> <span class="mi">2</span><span class="p">]</span>
+
+      <span class="c1"># Inline render errors so we set the endpoint before calling it.</span>
+      <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">put_in</span> <span class="n">conn</span><span class="o">.</span><span class="n">secret_key_base</span><span class="p">,</span> <span class="n">config</span><span class="p">(</span><span class="ss">:secret_key_base</span><span class="p">)</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">put_in</span> <span class="n">conn</span><span class="o">.</span><span class="n">script_name</span><span class="p">,</span> <span class="n">script_name</span><span class="p">()</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">put_private</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="ss">:phoenix_endpoint</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+
+        <span class="k">try</span> <span class="k">do</span>
+          <span class="kn">super</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+        <span class="k">catch</span>
+          <span class="n">kind</span><span class="p">,</span> <span class="n">reason</span> <span class="o">-&gt;</span>
+            <span class="no">Phoenix</span><span class="o">.</span><span class="no">Endpoint</span><span class="o">.</span><span class="no">RenderErrors</span><span class="o">.</span><span class="n">__catch__</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="nv">@phoenix_render_errors</span><span class="p">)</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+
+      <span class="o">...</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p>実質、単純に <code>super(conn, opts)</code> を呼ぶだけである。<br>
+これによって Plug ライブラリの仕様に従って <code>plug ...</code> と書いている部分が次々と呼ばれることになる。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Endpoint</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Endpoint</span><span class="p">,</span> <span class="ss">otp_app:</span> <span class="ss">:hello_world</span>
+
+  <span class="o">...</span>
+
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Static</span><span class="p">,</span>
+    <span class="ss">at:</span> <span class="s2">"/"</span><span class="p">,</span> <span class="ss">from:</span> <span class="ss">:hello_world</span><span class="p">,</span> <span class="ss">gzip:</span> <span class="no">false</span><span class="p">,</span>
+    <span class="ss">only:</span> <span class="sx">~w(css fonts images js favicon.ico robots.txt)</span>
+
+  <span class="o">...</span>
+
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">MethodOverride</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Head</span>
+
+  <span class="c1"># The session will be stored in the cookie and signed,</span>
+  <span class="c1"># this means its contents can be read but not tampered with.</span>
+  <span class="c1"># Set :encryption_salt if you would also like to encrypt it.</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="p">,</span>
+    <span class="ss">store:</span> <span class="ss">:cookie</span><span class="p">,</span>
+    <span class="ss">key:</span> <span class="s2">"_hello_world_key"</span><span class="p">,</span>
+    <span class="ss">signing_salt:</span> <span class="s2">"jGwspS0w"</span>
+
+  <span class="n">plug</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>Plug.Static.call/2</code>, <code>Plug.MethodOverride.call/2</code>, ..., <code>Plug.Session.call/2</code> と呼ばれていって、最終的には <code>HelloWorld.Router.call/2</code> が呼ばれる。</p>
+
+<p>これで無事、リクエストが <code>HelloWorld.Router</code> に渡る。</p>
+
+<h2>
+<span id="helloworldrouter" class="fragment"></span><a href="#helloworldrouter"><i class="fa fa-link"></i></a>HelloWorld.Router</h2>
+
+<p><code>hello_world/web/router.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">pipeline</span> <span class="ss">:api</span> <span class="k">do</span>
+  <span class="n">plug</span> <span class="ss">:token_authentication</span><span class="p">,</span> <span class="ss">foo:</span> <span class="s2">"foo"</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="p">,</span> <span class="ss">bar:</span> <span class="s2">"bar"</span>
+  <span class="n">plug</span> <span class="ss">:dispatch</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>は大体以下の様に展開される</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="nv">@phoenix_pipeline_scopes</span> <span class="p">[</span><span class="ss">:token_authentication</span><span class="p">,</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="p">,</span> <span class="ss">:dispatch</span><span class="p">]</span>
+
+<span class="k">def</span> <span class="n">api</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+  <span class="k">try</span> <span class="k">do</span>
+    <span class="n">conn</span>
+    <span class="o">|&gt;</span> <span class="n">token_authentication</span><span class="p">(</span><span class="ss">foo:</span> <span class="s2">"foo"</span><span class="p">)</span>
+    <span class="o">|&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="ss">bar:</span> <span class="s2">"bar"</span><span class="p">)</span>
+    <span class="o">|&gt;</span> <span class="n">dispatch</span><span class="p">([])</span>
+  <span class="k">catch</span>
+    <span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span> <span class="o">-&gt;</span>
+      <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="no">WrapperError</span><span class="o">.</span><span class="n">reraise</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>この <code>pipeline</code> を適用するには <code>pipe_through</code> を使う。</p>
+
+<p><code>hello_world/web/router.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">scope</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">HelloWorld</span> <span class="k">do</span>
+  <span class="n">pipe_through</span> <span class="ss">:api</span>
+  <span class="n">get</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">PageController</span><span class="p">,</span> <span class="ss">:index</span>
+  <span class="n">get</span> <span class="s2">"/foo"</span><span class="p">,</span> <span class="no">PageController</span><span class="p">,</span> <span class="ss">:foo</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これは大体以下の様に展開される。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># pipe_through :api の展開結果</span>
+<span class="nv">@phoenix_router_scopes</span> <span class="p">[%</span><span class="no">Scope</span><span class="p">{</span><span class="o">...</span><span class="p">,</span>
+                               <span class="ss">pipes:</span> <span class="p">[</span><span class="ss">:api</span><span class="p">],</span>
+                               <span class="o">...</span><span class="p">},</span>
+                        <span class="p">%</span><span class="no">Scope</span><span class="p">{}]</span>
+
+<span class="c1"># get ... の展開結果</span>
+<span class="nv">@phoenix_routes</span> <span class="p">[</span><span class="no">Scope</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="ss">:match</span><span class="p">,</span> <span class="ss">:get</span><span class="p">,</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">PageController</span><span class="p">,</span> <span class="ss">:index</span><span class="p">,</span> <span class="p">[])</span> <span class="o">|</span> <span class="nv">@phoenix_routes</span><span class="p">]</span>
+<span class="nv">@phoenix_routes</span> <span class="p">[</span><span class="no">Scope</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="ss">:match</span><span class="p">,</span> <span class="ss">:get</span><span class="p">,</span> <span class="s2">"/foo"</span><span class="p">,</span> <span class="no">PageController</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">,</span> <span class="p">[])</span> <span class="o">|</span> <span class="nv">@phoenix_routes</span><span class="p">]</span>
+</pre></div></div>
+
+<p>この時点では、<code>pipeline</code> で定義された関数を呼び出す処理は無く、単に attribute を定義しているだけである。</p>
+
+<p>これらの attribute を使って、<code>Phoenix.Router.__before_compile__/1</code> は以下の様に展開される。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">__match_route__</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="s2">"GET"</span><span class="p">,</span> <span class="p">[],</span> <span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">pipelines</span> <span class="o">=</span> <span class="k">fn</span> <span class="n">conn</span> <span class="o">-&gt;</span> <span class="n">api</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">[])</span> <span class="k">end</span>
+  <span class="n">dispatch</span> <span class="o">=</span> <span class="k">fn</span> <span class="n">conn</span> <span class="o">-&gt;</span>
+               <span class="n">opts</span> <span class="o">=</span> <span class="no">PageController</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">:index</span><span class="p">)</span>
+               <span class="no">PageController</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+             <span class="k">end</span>
+  <span class="p">{</span><span class="n">conn</span><span class="p">,</span> <span class="n">pipelines</span><span class="p">,</span> <span class="n">dispatch</span><span class="p">}</span>
+<span class="k">end</span>
+
+<span class="k">def</span> <span class="n">__match_route__</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="s2">"GET"</span><span class="p">,</span> <span class="p">[</span><span class="s2">"foo"</span><span class="p">],</span> <span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">pipelines</span> <span class="o">=</span> <span class="k">fn</span> <span class="n">conn</span> <span class="o">-&gt;</span> <span class="n">api</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">[])</span> <span class="k">end</span>
+  <span class="n">dispatch</span> <span class="o">=</span> <span class="k">fn</span> <span class="n">conn</span> <span class="o">-&gt;</span>
+               <span class="n">opts</span> <span class="o">=</span> <span class="no">PageController</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">:foo</span><span class="p">)</span>
+               <span class="no">PageController</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+             <span class="k">end</span>
+  <span class="p">{</span><span class="n">conn</span><span class="p">,</span> <span class="n">pipelines</span><span class="p">,</span> <span class="n">dispatch</span><span class="p">}</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>この <code>__match_route__</code> は、<code>Phoenix.Router.__using__/1</code> によって定義された <code>HelloWorld.Router.call/2</code> 内で使用されている。<br>
+<code>HelloWorld.Router.call/2</code> は、先程説明したように <code>HelloWorld.Endpoint</code> から呼び出される関数である。</p>
+
+<p><code>phoenix/lib/router.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">conn</span>
+  <span class="o">|&gt;</span> <span class="n">prepare</span><span class="p">()</span>
+  <span class="o">|&gt;</span> <span class="n">__match_route__</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">method</span><span class="p">,</span> <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">path_info</span><span class="p">,</span> <span class="o">&amp;</span><span class="no">URI</span><span class="o">.</span><span class="n">decode</span><span class="o">/</span><span class="mi">1</span><span class="p">),</span> <span class="n">conn</span><span class="o">.</span><span class="n">host</span><span class="p">)</span>
+  <span class="o">|&gt;</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Router</span><span class="o">.</span><span class="n">__call__</span><span class="p">()</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>__match_route__/4</code> の結果を <code>Phoenix.Router.__call__/1</code> に渡している。<br>
+この実装は以下の様になっている。</p>
+
+<p><code>phoenix/lib/router.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">def</span> <span class="n">__call__</span><span class="p">({</span><span class="n">conn</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">,</span> <span class="n">dispatch</span><span class="p">})</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="n">pipeline</span><span class="o">.</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span> <span class="k">do</span>
+      <span class="p">%</span><span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="p">{</span><span class="ss">halted:</span> <span class="no">true</span><span class="p">}</span> <span class="o">=</span> <span class="n">halted_conn</span> <span class="o">-&gt;</span>
+        <span class="n">halted_conn</span>
+      <span class="p">%</span><span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="p">{}</span> <span class="o">=</span> <span class="n">piped_conn</span> <span class="o">-&gt;</span>
+        <span class="k">try</span> <span class="k">do</span>
+          <span class="n">dispatch</span><span class="o">.</span><span class="p">(</span><span class="n">piped_conn</span><span class="p">)</span>
+        <span class="k">catch</span>
+          <span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span> <span class="o">-&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="no">WrapperError</span><span class="o">.</span><span class="n">reraise</span><span class="p">(</span><span class="n">piped_conn</span><span class="p">,</span> <span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+        <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p>ここで <code>pipeline.(conn)</code> しており、これによって <code>pipeline</code> で定義された <code>api/2</code> 関数を呼び出している。<br>
+その後、<code>dispatch.(piped_conn)</code> によって <code>PageController</code> の <code>init/1</code> と <code>call/2</code> を呼び出している。</p>

@@ -1,0 +1,74 @@
+<p>Mnesiaを使う際には、基本的にレコードを使って格納したり検索したりします。</p>
+
+<p>例えば以下のようなレコードを定義して、</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">record</span><span class="p">(</span><span class="nl">myapp_record</span><span class="p">,</span> <span class="p">{</span>
+          <span class="nb">node</span> <span class="p">::</span> <span class="nb">node</span><span class="p">(),</span>
+          <span class="n">key</span> <span class="p">::</span> <span class="nf">string</span><span class="p">(),</span>
+          <span class="n">value</span> <span class="p">::</span> <span class="nf">any</span><span class="p">()</span>
+         <span class="p">}).</span>
+</pre></div></div>
+
+<p>以下のように検索を行います。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">F</span> <span class="o">=</span> <span class="k">fun</span><span class="p">()</span> <span class="o">-&gt;</span>
+            <span class="c">%% 全件検索
+</span>            <span class="nv">MatchHead</span> <span class="o">=</span> <span class="nl">#myapp_record</span><span class="p">{_</span><span class="o">=</span><span class="n">'_'</span><span class="p">},</span>
+            <span class="nv">Result</span> <span class="o">=</span> <span class="n">'$_'</span><span class="p">,</span>
+            <span class="nn">mnesia</span><span class="p">:</span><span class="nf">select</span><span class="p">(</span><span class="n">myapp_record</span><span class="p">,</span> <span class="p">[{</span><span class="nv">MatchHead</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[</span><span class="nv">Result</span><span class="p">]}])</span>
+    <span class="k">end</span><span class="p">,</span>
+<span class="nv">Results</span> <span class="o">=</span> <span class="nn">mnesia</span><span class="p">:</span><span class="nf">activity</span><span class="p">(</span><span class="n">transaction</span><span class="p">,</span> <span class="nv">F</span><span class="p">),</span>
+</pre></div></div>
+
+<p>これは実行する時には全く問題のないコードです。</p>
+
+<p>しかし、この状態で dialyzer に掛けると、</p>
+
+<ul>
+<li>「<code>node()</code>型であるはずの<code>#myapp_record.node</code>に<code>'_'</code>アトムを入れてるよ！」</li>
+<li>「<code>string()</code>型であるはずの<code>#myapp_record.key</code>に<code>'_'</code>アトムを入れてるよ！」</li>
+</ul>
+
+<p>という警告が出ます。<sup id="fnref1"><a href="#fn1" rel="footnote" title="valueはany()型でありアトムを含むので警告は出ない。">1</a></sup></p>
+
+<p>なぜなら <code>mnesia:select/2</code> で検索する時に <code>#myapp_record{_='_'}</code> という検索用のレコードを作っていて、これによってレコードの各フィールドに <code>'_'</code> アトムが設定されるからです。<sup id="fnref2"><a href="#fn2" rel="footnote" title="'_' を書きすぎて '_' が顔にしか見えなくなってきた">2</a></sup></p>
+
+<p>レコードは単なるタプルなので、以下のように書くことで警告を回避できます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">MatchHead</span> <span class="o">=</span> <span class="p">{</span><span class="n">myapp_record</span><span class="p">,</span> <span class="n">'_'</span><span class="p">,</span> <span class="n">'_'</span><span class="p">,</span> <span class="n">'_'</span><span class="p">}</span>
+</pre></div></div>
+
+<p>しかし、これはフィールドの数が増えたり順序が変わった時にこの行も変更する必要があるので、やめておいた方がいいでしょう。</p>
+
+<p><a href="http://erlang.org/pipermail/erlang-questions/2009-November/047780.html" rel="nofollow noopener" target="_blank">Record typing for dialyzer</a> にあるように、以下のように書くのが良さそうです。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">type</span> <span class="nf">search_spec</span><span class="p">()</span> <span class="p">::</span> <span class="n">'_'</span> <span class="p">|</span> <span class="n">'$1'</span> <span class="p">|</span> <span class="n">'$2'</span> <span class="p">|</span> <span class="n">'$3'</span> <span class="p">|</span> <span class="n">'$4'</span> <span class="p">|</span> <span class="n">'$5'</span> <span class="p">|</span> <span class="n">'$6'</span> <span class="p">|</span> <span class="n">'$7'</span> <span class="p">|</span> <span class="n">'$8'</span> <span class="p">|</span> <span class="n">'$9'</span><span class="p">.</span>
+
+<span class="p">-</span><span class="ni">record</span><span class="p">(</span><span class="nl">myapp_record</span><span class="p">,</span> <span class="p">{</span>
+          <span class="nb">node</span> <span class="p">::</span> <span class="nb">node</span><span class="p">()</span> <span class="p">|</span> <span class="nf">search_spec</span><span class="p">(),</span>
+          <span class="n">key</span> <span class="p">::</span> <span class="nf">string</span><span class="p">()</span> <span class="p">|</span> <span class="nf">search_spec</span><span class="p">(),</span>
+          <span class="n">value</span> <span class="p">::</span> <span class="nf">any</span><span class="p">()</span> <span class="p">|</span> <span class="nf">search_spec</span><span class="p">()</span>
+         <span class="p">}).</span>
+</pre></div></div>
+
+<p>このように、各フィールドに検索用のアトムが入ることを許可します。</p>
+
+<p>なんか汚い解決方法だとは思いますが、<code>search_spec()</code> という名前があるおかげでまだマシかなと思います。</p>
+
+<p><code>ets</code>でレコードを格納、検索する際にも同様の問題が起きたりしますが、同様の方法で解決できます。<br>
+dialyzer は便利なので、うまく共存していきましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>value</code>は<code>any()</code>型でありアトムを含むので警告は出ない。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><code>'_'</code> を書きすぎて <code>'_'</code> が顔にしか見えなくなってきた <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

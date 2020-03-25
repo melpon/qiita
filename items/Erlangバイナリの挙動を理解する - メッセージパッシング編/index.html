@@ -1,0 +1,205 @@
+<p><a href="http://qiita.com/melpon/items/17c4eaa3fb15fba0e8b5" id="reference-3f98824591a1358da3a4">Erlangバイナリの挙動を理解する - 値の追加編</a> では、値を追加した時のバイナリの挙動を書きました。</p>
+
+<p>今回はメッセージパッシングを行った時にどのような挙動になるかを説明します。<sup id="fnref1"><a href="#fn1" rel="footnote" title="今回も変わらずOTP-19.2の情報を元に書きます。">1</a></sup></p>
+
+<p>今回の話も <a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a> の 4.2  Constructing Binaries を深く掘り下げた内容になっています。</p>
+
+<p>また、 <a href="http://qiita.com/mururu/items/55324a0aea0ee5cf7f61" id="reference-847ac70fd69eaaf5fe85">Sharing Preserving</a> に関するコードはちゃんと追っていないため、Sharing Preservingを有効にして送信した場合に違いが現れるのかは分かりません。</p>
+
+<h1>
+<span id="プロセスヒープと共有ヒープ" class="fragment"></span><a href="#%E3%83%97%E3%83%AD%E3%82%BB%E3%82%B9%E3%83%92%E3%83%BC%E3%83%97%E3%81%A8%E5%85%B1%E6%9C%89%E3%83%92%E3%83%BC%E3%83%97"><i class="fa fa-link"></i></a>プロセスヒープと共有ヒープ</h1>
+
+<p>Erlang のランタイムにはプロセスヒープと共有ヒープと呼ばれる領域があります。</p>
+
+<p>プロセスヒープは、プロセス毎に完全に分かれている領域です。<br>
+他のプロセスが参照することは決してありません。<br>
+HeapBinや、ProcBin、SubBinはプロセスヒープに確保されます。</p>
+
+<p>それに対して共有ヒープは、全てのプロセスが共有可能な領域です。<br>
+Binaryの領域は、共有ヒープ上に確保されます。</p>
+
+<p><a href="http://qiita.com/17c4eaa3fb15fba0e8b5">前回</a>と同じような図をプロセスヒープと共有ヒープに分けると、以下のようになります。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e35aae0-4798-02ba-10d5-2723042737c2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=fce7436cde2eb338a00fc400596c0fc6" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e35aae0-4798-02ba-10d5-2723042737c2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=fce7436cde2eb338a00fc400596c0fc6" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/6e35aae0-4798-02ba-10d5-2723042737c2.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e35aae0-4798-02ba-10d5-2723042737c2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=483321409c5f6f4238622c453e4a4862 1x" loading="lazy"></a></p>
+
+<h1>
+<span id="メッセージパッシングを行う" class="fragment"></span><a href="#%E3%83%A1%E3%83%83%E3%82%BB%E3%83%BC%E3%82%B8%E3%83%91%E3%83%83%E3%82%B7%E3%83%B3%E3%82%B0%E3%82%92%E8%A1%8C%E3%81%86"><i class="fa fa-link"></i></a>メッセージパッシングを行う</h1>
+
+<p>バイナリのメッセージパッシングでは、コピーするバイト数と、使用するメモリサイズが可能な限り少なくなるように最適化されています。<br>
+この動作はとても面白くて、<strong>メッセージパッシングをした方が使用メモリが少なくなる</strong>ということが起きます。</p>
+
+<p>それぞれのケースでどのような挙動になるかを見ていきましょう。</p>
+
+<h2>
+<span id="heapbinの場合" class="fragment"></span><a href="#heapbin%E3%81%AE%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a>HeapBinの場合</h2>
+
+<p>プロセスヒープは他のプロセスから参照できません。<br>
+そのため、メッセージパッシングを行う場合、プロセスヒープにある領域はどうやってもコピーが発生します。</p>
+
+<p>つまり、全ての領域がプロセスヒープに確保されるHeapBinは、全てコピーされることになります。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3a879b02-d8e3-a137-9a6e-742b8d267f1e.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=057e107a8d705e876db93ab6319caa33" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3a879b02-d8e3-a137-9a6e-742b8d267f1e.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=057e107a8d705e876db93ab6319caa33" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/3a879b02-d8e3-a137-9a6e-742b8d267f1e.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3a879b02-d8e3-a137-9a6e-742b8d267f1e.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=f8d224b6bded4c4a62ba4d8e7c1a19c6 1x" loading="lazy"></a></p>
+
+<p>バイナリの場合、プロセスヒープには最大で64バイト以下の領域しか確保しないため、そこまで遅くはならないでしょう。</p>
+
+<h2>
+<span id="procbinの場合" class="fragment"></span><a href="#procbin%E3%81%AE%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a>ProcBinの場合</h2>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2f0c1f60-446a-99fa-9bfb-95f9b6c31f75.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=4f158d4a7511ee43d0db2ba23c279286" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2f0c1f60-446a-99fa-9bfb-95f9b6c31f75.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=4f158d4a7511ee43d0db2ba23c279286" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/2f0c1f60-446a-99fa-9bfb-95f9b6c31f75.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F2f0c1f60-446a-99fa-9bfb-95f9b6c31f75.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=5562898a4c5deaf3365c6fae027d9f02 1x" loading="lazy"></a></p>
+
+<p>先程説明したように、ProcBinはプロセスヒープに、Binaryは共有ヒープに置かれます。</p>
+
+<p>この図では、Binaryは<code>orig_bytes</code>の領域として256バイト使っていますが、実際に使っているのは128バイトだけです。<br>
+前回説明したように、値の追加をする最適化のために、Binaryは余分な領域を確保することがあります。</p>
+
+<p>この時、<code>A</code>をメッセージパッシングで別プロセスに送ると、以下のようになります。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F12faffbf-749a-ed58-685d-a17236fe0bbe.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ccda5a81fed4381780cc1e4eebe4fe8a" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F12faffbf-749a-ed58-685d-a17236fe0bbe.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ccda5a81fed4381780cc1e4eebe4fe8a" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/12faffbf-749a-ed58-685d-a17236fe0bbe.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F12faffbf-749a-ed58-685d-a17236fe0bbe.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=ab5c6df249b10c24844ecef39fb84256 1x" loading="lazy"></a></p>
+
+<p>ProcBinは、HeapBinと同じように、単純にコピーされるだけです。<br>
+この時、両方のプロセスで同じBinaryを指すようにします。<br>
+こうすることで、最小限のコピーで他のプロセスにバイナリを渡すことができます。</p>
+
+<p>面白いのはBinaryで、メッセージパッシングを送った時に余分な領域があるなら、<strong>Binaryの領域をreallocで縮めます</strong>。</p>
+
+<p>reallocは、特にサイズを縮める方向なら単にメモリの使用サイズを減らすだけで対応できるため、メモリを確保せず使用サイズを書き換えて同じポインタを返すことが多くなっています。<br>
+そのため、reallocをすることで一切領域をコピーせずメモリの使用量を減らすことができます。<sup id="fnref2"><a href="#fn2" rel="footnote" title="glibc の場合、多分 この辺 がその実装">2</a></sup><sup id="fnref3"><a href="#fn3" rel="footnote" title="ただし、ソースを追いかけたけど結局glibcリのreallocを使っているかどうかは分からなかった。この辺の処理で領域を縮めてるようにも見える。">3</a></sup></p>
+
+<p>ここで領域を縮める理由は、他のプロセスにバイナリを投げたのに、バイナリを投げた先で更に領域を追加することは考えにくいからでしょう。<br>
+今後追加される可能性が低く、もう使われることのなさそうな領域であるため、メモリを縮めた上でBinaryを他のプロセスと共有しています。</p>
+
+<h2>
+<span id="subbinの場合" class="fragment"></span><a href="#subbin%E3%81%AE%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a>SubBinの場合</h2>
+
+<p>SubBinは更に、<code>orig</code>の指すデータがHeapBinかProcBinであるかによって処理が異なります。</p>
+
+<h3>
+<span id="origがheapbinを指す場合" class="fragment"></span><a href="#orig%E3%81%8Cheapbin%E3%82%92%E6%8C%87%E3%81%99%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a><code>orig</code>がHeapBinを指す場合</h3>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e2d5586-2864-442a-6765-5245cae27d04.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=084ce5331beabd51d3c8233b5d1862f7" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e2d5586-2864-442a-6765-5245cae27d04.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=084ce5331beabd51d3c8233b5d1862f7" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/6e2d5586-2864-442a-6765-5245cae27d04.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F6e2d5586-2864-442a-6765-5245cae27d04.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=6fed1b87cb32b77d3867f5569cc63797 1x" loading="lazy"></a></p>
+
+<p>HeapBinが何バイトあっても、<code>SubBin:off</code>と<code>SubBin:size</code>を考慮し、必要な部分だけをコピーします。<br>
+この例では、HeapBinに10バイトあり、その中の3バイトだけをSubBinが参照しています。<br>
+この時、その3バイトだけを新しくHeapBinとして作り、必要な領域だけをコピーします。</p>
+
+<p>面白いのは、メッセージを送った先では<strong>SubBinを作らない</strong>ことです。<br>
+必要な領域しかコピーしないため、SubBinが不要になるのです。</p>
+
+<h3>
+<span id="origがprocbinを指す場合" class="fragment"></span><a href="#orig%E3%81%8Cprocbin%E3%82%92%E6%8C%87%E3%81%99%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a><code>orig</code>がProcBinを指す場合</h3>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F43ff7e68-6c55-7106-5176-171ead4163ed.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=7f74d428beac2c596bb4c206c45d2070" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F43ff7e68-6c55-7106-5176-171ead4163ed.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=7f74d428beac2c596bb4c206c45d2070" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/43ff7e68-6c55-7106-5176-171ead4163ed.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F43ff7e68-6c55-7106-5176-171ead4163ed.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=f4f41bd1180aab487b2a794fac087d7c 1x" loading="lazy"></a></p>
+
+<p>Binaryは、ProcBinの場合と同じように、realloc()でヒープを縮めます。<br>
+あとはProcBinをコピーするだけです。<br>
+この時、<code>ProcBin:size</code>を128から10に書き換え、更に<code>bytes</code>の指す領域を、SubBinの<code>off</code>のバイト数分だけ加算します。</p>
+
+<p>これはつまり、SubBinが<code>off</code>と<code>size</code>によって領域の一部だけを指す仕組みを、<strong>SubBinを使わずProcBinだけで</strong>実現しています。<br>
+バイナリに値を追加する処理では、ProcBinそのものを共有するためにSubBinを生成していましたが、ProcBinそのものをコピーするメッセージパッシングの場合、このようにSubBinを使わずに実現できます。</p>
+
+<p>このように、どちらも、メッセージパッシングした先のプロセスではSubBinを<strong>生成しません</strong>。<sup id="fnref4"><a href="#fn4" rel="footnote" title="ただし、SubBinじゃないとビット情報を保持できないので、ビットを扱っている場合はSubBinを生成します">4</a></sup><br>
+これによって、SubBinを生成するコストや、コピーするサイズを可能な限り減らしています。<br>
+かなり最適化されていることが分かります。</p>
+
+<h1>
+<span id="便利関数shrink" class="fragment"></span><a href="#%E4%BE%BF%E5%88%A9%E9%96%A2%E6%95%B0shrink"><i class="fa fa-link"></i></a>便利関数shrink</h1>
+
+<p>バイナリに値を追加した後、他のプロセスにメッセージを送信することで、メモリの使用量が減らせます。<br>
+１プロセスで、バイナリに値を追加した後に「もう使わないけどこの余分に確保しているだろうメモリが気になる」という場合に、以下のような関数を使うことでメモリ使用量を減らせる可能性があります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">shrink</span><span class="p">(</span><span class="nv">Bin</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Pid</span> <span class="o">=</span> <span class="nb">spawn_link</span><span class="p">(</span><span class="k">fun</span> <span class="p">()</span> <span class="o">-&gt;</span>
+                             <span class="k">receive</span>
+                                 <span class="p">{</span><span class="n">shrink</span><span class="p">,</span> <span class="nv">Parent</span><span class="p">,</span> <span class="p">_</span><span class="nv">Bin</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="nv">Parent</span> <span class="o">!</span> <span class="p">{</span><span class="n">received</span><span class="p">,</span> <span class="nf">self</span><span class="p">()}</span>
+                             <span class="k">end</span>
+                     <span class="k">end</span><span class="p">),</span>
+    <span class="nv">Pid</span> <span class="o">!</span> <span class="p">{</span><span class="n">shrink</span><span class="p">,</span> <span class="nf">self</span><span class="p">(),</span> <span class="nv">Bin</span><span class="p">},</span>
+    <span class="k">receive</span>
+        <span class="p">{</span><span class="n">received</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="n">ok</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>単純に、新しいプロセスで１回だけメッセージを受け、返信してから終了しているだけです。</p>
+
+<p>これは以下のように使います。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% 3バイトの領域を使用
+</span><span class="nv">A</span> <span class="o">=</span> <span class="nn">binary</span><span class="p">:</span><span class="nf">copy</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="o">&gt;&gt;</span><span class="p">),</span>
+<span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="nn">binary</span><span class="p">:</span><span class="nf">referenced_byte_size</span><span class="p">(</span><span class="nv">A</span><span class="p">)]),</span>
+
+<span class="c">%% 値の追加によって256バイトの領域を使用
+</span><span class="nv">B</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">A</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+<span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="nn">binary</span><span class="p">:</span><span class="nf">referenced_byte_size</span><span class="p">(</span><span class="nv">B</span><span class="p">)]),</span>
+
+<span class="c">%% メッセージを投げることで6バイトになる
+</span><span class="nf">shrink</span><span class="p">(</span><span class="nv">B</span><span class="p">),</span>
+<span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="nn">binary</span><span class="p">:</span><span class="nf">referenced_byte_size</span><span class="p">(</span><span class="nv">B</span><span class="p">)]),</span>
+
+<span class="n">ok</span><span class="p">.</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>3
+256
+6
+</pre></div></div>
+
+<p><code>binary:referenced_byte_size/1</code>は、ProcBinの場合にはBinaryの<code>orig_size</code>を返します。<br>
+最初の<code>B</code>のサイズは256であり、余分な領域が250バイトもあります。<br>
+しかし<code>shrink/1</code>を呼び出すと、次の呼び出しでは6になり、ちゃんと領域が縮められていることが分かります。</p>
+
+<p><code>binary:copy/1</code>でも同じようにサイズを減らすことができますが、<code>binary:copy/1</code>はBinaryの領域に対しても<strong>必ずメモリコピーが発生します</strong>。<br>
+それに比べてこちらはreallocで縮めるので、Binaryのメモリコピーが発生しない可能性があります。<br>
+メッセージパッシングの挙動を知っていれば、このようなコードを書くこともできます。</p>
+
+<p>ただし、普通はこのコードを見ても意味が分からないので、よっぽど最適化したいのでなければやらない方がいいでしょう。</p>
+
+<h1>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h1>
+
+<ul>
+<li>共有ヒープにあるBinaryはreallocで領域を縮めた上で共有される</li>
+<li>SubBinを可能な限り生成しないようにしている</li>
+</ul>
+
+<p>前回の分と合わせれば、値を効率よく追加した上で、追加する必要が無くなったら余分に確保していたメモリをメッセージパッシングで減らすという、かなり効率の良い最適化ができるようになります。</p>
+
+<p>また、メッセージパッシングでは、HeapBinは64バイト以下だけでしか利用しないし、Binaryに領域があるならメモリが共有され、SubBinも生成されません。<br>
+そのため、メッセージパッシングのコストはかなり少ないと言えます。<sup id="fnref5"><a href="#fn5" rel="footnote" title="もちろん別ノードのプロセスにメッセージパッシングする場合は別">5</a></sup><br>
+安心してバイナリを送信しましょう。</p>
+
+<h1>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h1>
+
+<ul>
+<li><a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a></li>
+<li><a href="https://github.com/erlang/otp/tree/OTP-19.2/erts/emulator/beam" rel="nofollow noopener" target="_blank">otp/erts/emulator/beam at OTP-19.2 · erlang/otp</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>今回も変わらず<a href="https://github.com/erlang/otp/tree/OTP-19.2" rel="nofollow noopener" target="_blank">OTP-19.2</a>の情報を元に書きます。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>glibc の場合、多分 <a href="https://sourceware.org/git/?p=glibc.git;a=blob;f=malloc/malloc.c;h=584edbf059e5b5adcc21946406b8199ab3f7280d;hb=d08ab9ced75e0d88827e0bb58183612afb7fe1fd#l4372" rel="nofollow noopener" target="_blank">この辺</a> がその実装 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>ただし、ソースを追いかけたけど結局glibcリのreallocを使っているかどうかは分からなかった。<a href="https://github.com/erlang/otp/blob/OTP-19.2/erts/emulator/beam/erl_alloc_util.c#L2624" rel="nofollow noopener" target="_blank">この辺</a>の処理で領域を縮めてるようにも見える。 <a href="#fnref3">↩</a></p>
+</li>
+
+<li id="fn4">
+<p>ただし、SubBinじゃないとビット情報を保持できないので、ビットを扱っている場合はSubBinを生成します <a href="#fnref4">↩</a></p>
+</li>
+
+<li id="fn5">
+<p>もちろん別ノードのプロセスにメッセージパッシングする場合は別 <a href="#fnref5">↩</a></p>
+</li>
+
+</ol>
+</div>

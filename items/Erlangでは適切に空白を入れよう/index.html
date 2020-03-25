@@ -1,0 +1,48 @@
+<p>ネタ回です。</p>
+
+<h2>
+<span id="cのテンプレート" class="fragment"></span><a href="#c%E3%81%AE%E3%83%86%E3%83%B3%E3%83%97%E3%83%AC%E3%83%BC%E3%83%88"><i class="fa fa-link"></i></a>C++のテンプレート</h2>
+
+<p>唐突ですがC++のテンプレートについてです。</p>
+
+<p>C++にはテンプレートというのが存在していて、<code>list&lt;&gt;</code>というテンプレート型に、任意の型を入れることで新しい型を定義できる仕組みになっています。<br>
+例えば<code>list&lt;int&gt;</code>という風に書くと、<code>int</code>型のリストを表す型が定義されます。</p>
+
+<p>つまり<code>list&lt;long&gt;</code>や、<code>list&lt;list&lt;int&gt;&gt;</code>みたいな書き方ができる訳です。</p>
+
+<p>しかし実は <code>list&lt;list&lt;int&gt;&gt;</code> という書き方は、遥か昔のC++<sup id="fnref1"><a href="#fn1" rel="footnote" title="1998年版のC++（俗に言うC++98）や2003年版のC++（俗に言うC++03）がそれに当たります。2011年版のC++（俗に言うC++11）以降は直っています。">1</a></sup>ではコンパイルエラーになります。<br>
+なぜならC++のパーサが<code>list&lt;list&lt;int&gt;&gt;</code>をパースした結果、<code>&gt;&gt;</code>が、テンプレートの閉じカッコが2個並んでいるのではなく、右シフトの演算子として扱われるからです。</p>
+
+<p>そのため遥か昔のC++では<code>list&lt;list&lt;int&gt; &gt;</code>という風に、空白を入れることでパーサに区切りを伝える必要がありました。</p>
+
+<h2>
+<span id="本題" class="fragment"></span><a href="#%E6%9C%AC%E9%A1%8C"><i class="fa fa-link"></i></a>本題</h2>
+
+<p>つまりこういう。<sup id="fnref2"><a href="#fn2" rel="footnote" title="多分既にどこかで指摘されてるし、既に直さないって判断をしてると思うのですが、何で検索すればそういう情報が見つかるのか分かりませんでした。">2</a></sup></p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre>
+<span class="p">-</span><span class="ni">record</span><span class="p">(</span><span class="nl">test</span><span class="p">,</span> <span class="p">{</span><span class="n">hoge</span><span class="p">}).</span>
+
+<span class="nf">main</span><span class="p">(_)</span> <span class="o">-&gt;</span>
+  <span class="nv">Test</span> <span class="o">=</span> <span class="nl">#test</span><span class="p">{</span><span class="n">hoge</span><span class="o">=&lt;&lt;</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="o">&gt;&gt;</span><span class="p">}.</span>
+</pre></div></div>
+
+<p>実行結果:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>prog.erl:4: syntax error before: '=&lt;'
+</pre></div></div>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>1998年版のC++（俗に言うC++98）や2003年版のC++（俗に言うC++03）がそれに当たります。2011年版のC++（俗に言うC++11）以降は直っています。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>多分既にどこかで指摘されてるし、既に直さないって判断をしてると思うのですが、何で検索すればそういう情報が見つかるのか分かりませんでした。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,66 @@
+<p><code>make_ref/0</code> は呼び出す度にユニークな値を返す関数ですが、これがどの程度ユニークなのかを調べてみました。</p>
+
+<h2>
+<span id="結論" class="fragment"></span><a href="#%E7%B5%90%E8%AB%96"><i class="fa fa-link"></i></a>結論</h2>
+
+<ul>
+<li>全く別の独立した Erlang VM 上ではユニークにならない</li>
+<li>同じノード名で再起動した際に、再起動前に生成した値と同じになることがある</li>
+</ul>
+
+<h2>
+<span id="referenceの仕組み" class="fragment"></span><a href="#reference%E3%81%AE%E4%BB%95%E7%B5%84%E3%81%BF"><i class="fa fa-link"></i></a>Referenceの仕組み</h2>
+
+<p><code>make_ref/0</code>が返すReference型は、送信する際のバイナリに以下の値を含めています<sup id="fnref1"><a href="#fn1" rel="footnote" title="Reference型の値そのものにはノード名は入っていない。ノード名は term_to_binary/1 等でバイナリにエンコードされる際に追加される。">1</a></sup>。</p>
+
+<ul>
+<li>自身のノード名の<code>atom</code>
+</li>
+<li>スレッドID</li>
+<li>１つのスレッドでユニークなカウンタ</li>
+</ul>
+
+<p>これらの値によってユニーク性を担保しています。</p>
+
+<p>スレッドIDは、Erlang VM起動時、必要な数だけスレッドが起動した時に決定します。<br>
+ソースを見た限り、それ以降は特にスレッド起こしたりしていないようです。<br>
+そのため、この値は Erlang VM が生きている間は変わらないでしょう。</p>
+
+<p>また、Erlang VM 間でクラスタリングを組む場合、それぞれのノード名は異なっている必要があります。<br>
+そのため、クラスタリングしている Erlang VM 間で一致する可能性は無さそうです。</p>
+
+<p>しかし、名前を付けていない Erlang VM のノード名は <code>noname@nohost</code> という名前になるし、たまたまノード名が一致する可能性もあるため、独立した Erlang VM 同士は Reference の値が一致する可能性を考える必要があります。</p>
+
+<p>また、同じノード名で再起動した場合も同様に Reference の値が一致する可能性があります。</p>
+
+<h2>
+<span id="気を付けること" class="fragment"></span><a href="#%E6%B0%97%E3%82%92%E4%BB%98%E3%81%91%E3%82%8B%E3%81%93%E3%81%A8"><i class="fa fa-link"></i></a>気を付けること</h2>
+
+<p>以下のことに注意して Reference を使いましょう。</p>
+
+<ul>
+<li>クラスタリングを組まず、例えばネットワーク通信で Reference のバイナリを送っても、それがお互いの Erlang VM 間でユニークになる保証は無い</li>
+<li>Reference のバイナリをファイルなどに保存し、再起動した後に読み込んだ際に、再起動する前の Erlang VM と自身の Erlang VM 間でユニークになる保証は無い</li>
+</ul>
+
+<p>つまり <strong>生きててクラスタリングを組んでいる Erlang VM 同士でしかユニークにならない</strong> 、ということに注意して利用しましょう。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/pipermail/erlang-questions/2009-March/042719.html" rel="nofollow noopener" target="_blank">[erlang-questions] make_ref bug or feature?</a></li>
+<li><a href="http://erlang.org/doc/man/erlang.html#make_ref-0" rel="nofollow noopener" target="_blank">make_ref/0</a></li>
+<li><a href="http://erlang.org/doc/apps/erts/erl_ext_dist.html#id101374" rel="nofollow noopener" target="_blank">11.20  NEW_REFERENCE_EXT</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>Reference型の値そのものにはノード名は入っていない。ノード名は <code>term_to_binary/1</code> 等でバイナリにエンコードされる際に追加される。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

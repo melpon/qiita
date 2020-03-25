@@ -1,0 +1,1032 @@
+<p>Erlangには自動インポートBIF（auto-imported BIF）と呼ばれる関数が存在しています。<br>
+その関数の一覧を調べてみました。</p>
+
+<h2>
+<span id="自動インポートbifについて" class="fragment"></span><a href="#%E8%87%AA%E5%8B%95%E3%82%A4%E3%83%B3%E3%83%9D%E3%83%BC%E3%83%88bif%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>自動インポートBIFについて</h2>
+
+<p>ErlangのBIF（Built-In Function）は、大体<code>erlang</code>モジュールに入っていて、これらの一部の関数は、モジュール名の修飾を書かなくても呼び出すことができます。<br>
+例えば<code>abs/1</code>の場合、<code>erlang:abs(-100)</code>と書かなくても、単に<code>abs(-100)</code>と書くだけで構いません。<br>
+このモジュール名の修飾が不要な関数を <strong>自動インポートBIF</strong> と呼びます。</p>
+
+<p>当然、自動インポートされていないBIFもあります。<br>
+例えば <code>crc32/1</code> は自動インポートBIFではありません。<br>
+そのため <code>crc32(&lt;&lt;1, 2, 3&gt;&gt;)</code> という呼び出しはエラーになります。<br>
+必ずモジュール名の修飾を付けて <code>erlang:crc32(&lt;&lt;1, 2, 3&gt;&gt;)</code> と書く必要があるのです。</p>
+
+<p>こうなってくると、一体<code>erlang</code>モジュールの、どの関数が自動インポートBIFで、どの関数が自動インポートBIFでないのかが気になってきます。<br>
+しかしドキュメントを探しても、その一覧というのが見つかりませんでした。</p>
+
+<p>仕方ないのでソースから調べました。以下の通りです。</p>
+
+<h2>
+<span id="自動インポートbif一覧" class="fragment"></span><a href="#%E8%87%AA%E5%8B%95%E3%82%A4%E3%83%B3%E3%83%9D%E3%83%BC%E3%83%88bif%E4%B8%80%E8%A6%A7"><i class="fa fa-link"></i></a>自動インポートBIF一覧</h2>
+
+<p>以下は、<code>erlang</code>モジュールに入っている関数を全て列挙しています。<br>
+自動インポートBIFの場合は「自動インポートBIF」と記述しています。</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">関数</th>
+<th style="text-align: center">自動インポートBIFかどうか</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">abs/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">adler32/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">adler32/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">adler32_combine/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">append_element/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">apply/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">apply/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">atom_to_binary/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">atom_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_part/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_part/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_atom/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_existing_atom/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_float/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_integer/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_integer/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_list/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_term/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">binary_to_term/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">bit_size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">bitsize/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">bitstring_to_list/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">bump_reductions/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">byte_size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">cancel_timer/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">cancel_timer/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">check_old_code/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">check_process_code/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">check_process_code/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">convert_time_unit/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">crc32/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">crc32/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">crc32_combine/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">date/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">decode_packet/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">delete_element/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">delete_module/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">demonitor/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">demonitor/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">disconnect_node/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">display/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">element/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">erase/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">erase/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">error/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">error/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">exit/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">exit/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">external_size/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">external_size/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">float/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">float_to_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">float_to_binary/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">float_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">float_to_list/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">fun_info/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">fun_info/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">fun_to_list/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">function_exported/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">garbage_collect/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">garbage_collect/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">garbage_collect/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">get/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">get/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">get_cookie/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">get_keys/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">get_keys/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">get_stacktrace/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">group_leader/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">group_leader/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">halt/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">halt/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">halt/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">hash/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">hd/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">hibernate/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">insert_element/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">integer_to_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">integer_to_binary/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">integer_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">integer_to_list/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">iolist_size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">iolist_to_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_alive/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_atom/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_bitstr/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_bitstring/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">is_boolean/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_builtin/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">is_float/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_function/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_function/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_integer/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_map/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_number/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_pid/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_port/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_process_alive/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_record/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_record/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_reference/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">is_tuple/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">length/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">link/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_atom/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_bitstring/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_existing_atom/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_float/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_integer/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_integer/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_pid/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">list_to_tuple/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">load_module/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">load_nif/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">loaded/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">localtime/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">localtime_to_universaltime/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">localtime_to_universaltime/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">make_ref/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">make_tuple/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">make_tuple/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">map_size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">match_spec_test/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">max/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">md5/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">md5_final/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">md5_init/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">md5_update/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">memory/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">memory/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">min/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">module_loaded/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">monitor/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">monitor/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">monitor_node/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">monitor_node/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">monotonic_time/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">monotonic_time/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">nif_error/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">nif_error/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">node/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">node/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">nodes/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">nodes/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">now/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">open_port/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">phash/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">phash2/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">phash2/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">pid_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_call/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">port_close/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_command/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_command/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_connect/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_control/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">port_info/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">port_info/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">port_to_list/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">ports/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">pre_loaded/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">process_display/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">process_flag/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">process_flag/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">process_info/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">process_info/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">processes/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">purge_module/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">put/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">raise/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">read_timer/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">read_timer/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">ref_to_list/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">register/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">registered/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">resume_process/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">round/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">self/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">send/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">send/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">send_after/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">send_after/4</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">send_nosuspend/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">send_nosuspend/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">set_cookie/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">setelement/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn/4</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_link/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_link/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_link/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_link/4</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_monitor/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_monitor/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_opt/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_opt/3</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_opt/4</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">spawn_opt/5</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">split_binary/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">start_timer/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">start_timer/4</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">statistics/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">suspend_process/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">suspend_process/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_flag/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_info/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_monitor/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_monitor/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_monitor/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_profile/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_profile/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_time/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">system_time/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">term_to_binary/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">term_to_binary/2</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">throw/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">time/0</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">time_offset/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">time_offset/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">timestamp/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">tl/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">trace/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">trace_delivered/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">trace_info/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">trace_pattern/2</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">trace_pattern/3</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">trunc/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">tuple_size/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">tuple_to_list/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">unique_integer/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">unique_integer/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">universaltime/0</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">universaltime_to_localtime/1</td>
+<td style="text-align: center"></td>
+</tr>
+<tr>
+<td style="text-align: center">unlink/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">unregister/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">whereis/1</td>
+<td style="text-align: center">自動インポートBIF</td>
+</tr>
+<tr>
+<td style="text-align: center">yield/0</td>
+<td style="text-align: center"></td>
+</tr>
+</tbody>
+</table>
+
+<h2>
+<span id="感想" class="fragment"></span><a href="#%E6%84%9F%E6%83%B3"><i class="fa fa-link"></i></a>感想</h2>
+
+<p><code>erlang</code>モジュールに入っている241関数中、152関数がBIFでした。<br>
+さすがにこの量を覚えれる気がしないので、</p>
+
+<ul>
+<li>とりあえず<code>erlang:</code>を書かずに記述してみて、エラーが出たら直す</li>
+<li>全部に<code>erlang:</code>を付けて呼び出す</li>
+</ul>
+
+<p>のどちらかの方針で良さそうです。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://github.com/erlang/otp/blob/cc25f4cd184ca41ba935e1d2d14eb250e68f11d2/lib/stdlib/src/erl_internal.erl#L254" rel="nofollow noopener" target="_blank">otp/erl_internal.erl at cc25f4cd184ca41ba935e1d2d14eb250e68f11d2 · erlang/otp</a></li>
+</ul>

@@ -1,0 +1,277 @@
+<p><a href="https://wandbox.org" rel="nofollow noopener" target="_blank">Wandbox</a> は、オンラインでコンパイルや実行が試せるサービスで、主に私（<a href="https://twitter.com/melponn" rel="nofollow noopener" target="_blank">@melponn</a>） と <a href="https://twitter.com/kikairoya" rel="nofollow noopener" target="_blank">@kikairoya</a> で作っています。<br>
+以前 <a href="http://melpon.org/pub/wandbox" rel="nofollow noopener" target="_blank">Wandboxを支える技術</a> というのを書いていたのですが、そこからかなり変わっているため、改めて今の中身がどうなってるかについて書いていきます。</p>
+
+<p>Wandbox は、Wandbox 本体と、各種コンパイラをビルドするための Wandbox Builder に分かれています。<br>
+ソースコードは <a href="https://github.com/melpon/wandbox" rel="nofollow noopener" target="_blank">wandbox</a> と <a href="https://github.com/melpon/wandbox-builder" rel="nofollow noopener" target="_blank">wandbox-builder</a> にあります。</p>
+
+<p>2019/9/26 追記: <a href="https://medium.com/wandbox-org/wandbox-%E3%81%AE%E3%83%93%E3%83%AB%E3%83%89%E3%82%92-cmake-%E3%81%AB%E7%A7%BB%E8%A1%8C%E3%81%97%E3%81%9F%E8%A9%B1-693956073d45" rel="nofollow noopener" target="_blank">Wandbox のビルドを CMake に移行した話</a> を書きました</p>
+
+<h1>
+<span id="wandbox" class="fragment"></span><a href="#wandbox"><i class="fa fa-link"></i></a>Wandbox</h1>
+
+<h2>
+<span id="犬小屋と牛舎" class="fragment"></span><a href="#%E7%8A%AC%E5%B0%8F%E5%B1%8B%E3%81%A8%E7%89%9B%E8%88%8E"><i class="fa fa-link"></i></a>犬小屋と牛舎</h2>
+
+<p>Wandboxはバックエンドとフロントエンドで分かれていて、フロントエンド側が <strong>犬小屋(kennel)</strong> 、バックエンド側が <strong>牛舎(cattleshed)</strong> という名前になっています。</p>
+
+<p>犬小屋は、普通の Web サーバです。C++ で書かれています。<br>
+牛舎は、ソースを与えると、安全な環境でコンパイルや実行をして、結果を返してくれるアプリケーションです。C++ で書かれています。</p>
+
+<p>ユーザがコンパイルや実行を行うと、以下のようになります。</p>
+
+<ol>
+<li>犬小屋がPOSTでコンパイラの種別やソースコードを受け取る</li>
+<li>その受け取ったコンパイラの種別やソースコードを牛舎に投げる<sup id="fnref1"><a href="#fn1" rel="footnote" title="犬小屋と牛舎の間は、TCP の上で自作のプロトコルを定義してやりとりしています。普通に JSON 使うだけだと TCP で受信するべきバイト数が分からないので困る。">1</a></sup>
+</li>
+<li>牛舎の中でコンパイルや実行を行う</li>
+<li>そのコンパイルや実行結果を、犬小屋が受け取る</li>
+<li>クライアント側に返して結果を表示する</li>
+</ol>
+
+<p><em>とても分かりやすい</em> 図が以前の資料にあったので、貼っておきます。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Ffb70c67b-694b-d9ad-f94c-adbdd7a6b15a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=9952c53fac525d3920ef9ccdb3da60d0" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Ffb70c67b-694b-d9ad-f94c-adbdd7a6b15a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=9952c53fac525d3920ef9ccdb3da60d0" alt="image.png" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/fb70c67b-694b-d9ad-f94c-adbdd7a6b15a.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Ffb70c67b-694b-d9ad-f94c-adbdd7a6b15a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=f63191dcd43c6668b34ea11c4840a7d7 1x" loading="lazy"></a></p>
+
+<h2>
+<span id="犬小屋" class="fragment"></span><a href="#%E7%8A%AC%E5%B0%8F%E5%B1%8B"><i class="fa fa-link"></i></a>犬小屋</h2>
+
+<p>犬小屋は、主に私（<a href="https://twitter.com/melponn" rel="nofollow noopener" target="_blank">@melponn</a>）が書いた、普通の Web サーバです。<br>
+C++ と、C++ 用の Web フレームワーク <a href="http://cppcms.com/wikipp/en/page/main" rel="nofollow noopener" target="_blank">CppCMS</a> を使って書いています。</p>
+
+<p>以前は Haskell と、Haskell 用の Web フレームワーク <a href="https://www.yesodweb.com/" rel="nofollow noopener" target="_blank">Yesod</a> を使って書いていましたが、メンテが辛くなったので C++ に置き換えました。</p>
+
+<h3>
+<span id="haskell-をやめた理由" class="fragment"></span><a href="#haskell-%E3%82%92%E3%82%84%E3%82%81%E3%81%9F%E7%90%86%E7%94%B1"><i class="fa fa-link"></i></a>Haskell をやめた理由</h3>
+
+<p><strong>Haskell は真面目なアプリケーション開発には向いてない</strong> というのが、Yesod で Web サーバを書いて運用してきた私の感想です。</p>
+
+<p>もうちょい具体的に書くと、</p>
+
+<ul>
+<li>ドキュメント無さすぎ。
+
+<ul>
+<li>Haskell では "型は良いドキュメントになる" 的な話をよく聞くけど、その慢心があるせいなのか、<strong>ドキュメントがまともに書かれてないことが多い</strong>。なので「この場合どうなるんだ？」となって結局ソースコードを読みに行くハメになることがほんとに多かった。</li>
+</ul>
+</li>
+<li>言語とその周辺ライブラリの進化が早すぎ（少なくとも当時は）。
+
+<ul>
+<li>私はアプリケーションを作りたいだけなのに、言語と周辺ライブラリを <strong>何度も</strong> 調査し直すことになって全然実装が進まなかった。Iteratee とか Enumerable とか Conduit とか。</li>
+<li>新しい機能を使わなければいいだけって思うかもしれないけど、Yesod は当時の新しい言語機能やライブラリを大量に使ってたフレームワークなので、これを新しくするとその辺の機能を使うことが強制される。</li>
+</ul>
+</li>
+<li>互換性壊しすぎ。
+
+<ul>
+<li>Haskell も Yesod も、簡単に互換性を壊すので、1ヶ月後ぐらいにアップデートして <strong>何もせずコンパイルが通ることなんてまず無かった</strong> 。</li>
+<li>なので結局 Yesod も Haskell もバージョンを固定してアップデートせずに使うようになった。これでしばらく平和が訪れてたんだけど、ある日 Yesod のビルド方法が変わって、<a href="http://www.yesodweb.com/blog/2014/08/deprecating-yesod-platform" rel="nofollow noopener" target="_blank">既存のビルド方法すら deprecated になった</a> 時点で心が折れた。もうこいつらには付いていけないと思って C++ に移行することにした。</li>
+</ul>
+</li>
+</ul>
+
+<h3>
+<span id="c-を使う理由" class="fragment"></span><a href="#c-%E3%82%92%E4%BD%BF%E3%81%86%E7%90%86%E7%94%B1"><i class="fa fa-link"></i></a>C++ を使う理由</h3>
+
+<p>当時、私が普通に書ける言語は C++, C#, Python あたりでした。<br>
+Haskell で書いていたので、それより遅くなるのはできるだけ避けたいというのがあって、Python は除外。<br>
+C# は、当時の自分の能力では Web サービスをまともに書ける気がしなかったので除外。<sup id="fnref2"><a href="#fn2" rel="footnote" title="今の自分なら、少なくとも Mono は絶対に無い と言えます。">2</a></sup></p>
+
+<p>Go や Rust あたりも一応考えた気はするのですが、当時の私の中では安定してない言語というイメージだったのでやめました。<br>
+Haskell では互換性で泣かされてたので、出来る限り安定した言語を使いたいというのがありました。</p>
+
+<p>ということで、<strong>安定の C++</strong> です。<br>
+高速だし、ドキュメントは揃ってるし、進化はゆっくりだし、互換性が壊れない。<br>
+やCN1（やっぱりC++がナンバーワン）<sup id="fnref3"><a href="#fn3" rel="footnote" title="元ネタはやっぱりカープがナンバーワン">3</a></sup>。</p>
+
+<p>GitHubのログを見る限り、22日間で移行を完了しています。<br>
+2014年9月15日に <a href="https://github.com/melpon/wandbox/commit/92e5deae71c11151561efb6850ce67a63fb63c1e" rel="nofollow noopener" target="_blank">C++への移行を開始</a> して、2014年10月7日に <a href="https://github.com/melpon/wandbox/commit/e462862a22c8aec94510888e8615560c6cb78d15" rel="nofollow noopener" target="_blank">C++への移行を完了</a>。<br>
+数年掛けて書いてきたコードがこれだけ早く移行できて、やっぱり Haskell は難しい言語だったんだなと思った記憶があります。</p>
+
+<h3>
+<span id="犬小屋の中身について" class="fragment"></span><a href="#%E7%8A%AC%E5%B0%8F%E5%B1%8B%E3%81%AE%E4%B8%AD%E8%BA%AB%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>犬小屋の中身について</h3>
+
+<p>犬小屋はただの Web サービスなので、普通にリクエストを受けて、レスポンスを返しているだけです。<br>
+レスポンスをリアルタイムに返すために <a href="https://www.w3.org/TR/eventsource/" rel="nofollow noopener" target="_blank">EventSource</a> を使っているところがちょっと特殊かも。<br>
+でもこれも CppCMS の <a href="http://cppcms.com/wikipp/en/page/cppcms_1x_application_lifetime#Asynchronous.Applications" rel="nofollow noopener" target="_blank">Asynchronous Applications</a> あたりを読んでやればすぐ分かるので、そんなに難しくありませんでした。</p>
+
+<p>ということで、Web サービスを作れて、C++ が読める人にとっては普通に読めるコードだと思います。</p>
+
+<h2>
+<span id="牛舎" class="fragment"></span><a href="#%E7%89%9B%E8%88%8E"><i class="fa fa-link"></i></a>牛舎</h2>
+
+<p>牛舎は、主に <a href="https://twitter.com/kikairoya" rel="nofollow noopener" target="_blank">@kikairoya</a> が書いた、ソースを与えると、<strong>安全な環境</strong> でコンパイルや実行をして、結果を返してくれるアプリケーションです。<br>
+当時は Docker なんていう便利なアプリケーションは無かったので、大体同じようなことを内部でやっています。</p>
+
+<p>なお牛舎に関しては、彼曰く</p>
+
+<blockquote class="twitter-tweet" data-conversation="none">
+<p><a href="https://twitter.com/melponn" rel="nofollow noopener" target="_blank">@melponn</a> 自由でオープンなソフトウェアなので誰でも内部を理解し、応用することができます</p>— 対鉱物用武装 (@kikairoya) <a href="https://twitter.com/kikairoya/status/391142370080608256" rel="nofollow noopener" target="_blank">2013年10月18日</a>
+</blockquote>
+
+<p>なので、以下の説明は私がコードを読んで理解したものになります。<sup id="fnref4"><a href="#fn4" rel="footnote" title="なぜそうしたのか？というのに関しては @kikairoya に直接聞いて下さい">4</a></sup></p>
+
+<h3>
+<span id="牛舎が閉じた環境で実行するまでの流れ" class="fragment"></span><a href="#%E7%89%9B%E8%88%8E%E3%81%8C%E9%96%89%E3%81%98%E3%81%9F%E7%92%B0%E5%A2%83%E3%81%A7%E5%AE%9F%E8%A1%8C%E3%81%99%E3%82%8B%E3%81%BE%E3%81%A7%E3%81%AE%E6%B5%81%E3%82%8C"><i class="fa fa-link"></i></a>牛舎が閉じた環境で実行するまでの流れ</h3>
+
+<ol>
+<li>犬小屋からコンパイラの種別やソースコードを受け取る</li>
+<li>ソースコードを実行用ディレクトリに保存する</li>
+<li>
+<a href="https://linuxjm.osdn.jp/html/LDP_man-pages/man2/setrlimit.2.html" rel="nofollow noopener" target="_blank"><code>setrlimit</code></a> を使って優先度やCPU時間やメモリ量、ファイルサイズなどの各種リソースを制限する</li>
+<li>
+<a href="https://linuxjm.osdn.jp/html/LDP_man-pages/man2/clone.2.html" rel="nofollow noopener" target="_blank"><code>clone</code></a> を使って、ネットワークやPID、マウント等の名前空間を新しく作る</li>
+<li>ループバックアドレスやマウントを新しく作り、<a href="https://linuxjm.osdn.jp/html/LDP_man-pages/man2/chroot.2.html" rel="nofollow noopener" target="_blank"><code>chroot</code></a> で実行用ディレクトリをルートディレクトリに変更する</li>
+<li>任意のプロセスを実行する</li>
+<li>出力やシグナルをリアルタイムで受け取って犬小屋に返す</li>
+</ol>
+
+<p>となっていて、3. でリソースが制限され、4. や 5. でネットワークや読み書きできるディレクトリが制限されているので、牛舎が壊されたりパスワードが盗まれたり踏み台にされたりといった問題が起きないようにしています。</p>
+
+<p>あとは root 以外のユーザでも新しい名前空間を作ったり <code>chroot</code> するために、事前に牛舎の実行バイナリに対して <code>setcap</code> コマンドで権限を与えています。</p>
+
+<h3>
+<span id="boost" class="fragment"></span><a href="#boost"><i class="fa fa-link"></i></a>Boost</h3>
+
+<p>牛舎では <a href="http://www.boost.org/" rel="nofollow noopener" target="_blank">Boost</a> が使われています。<br>
+Boost.Asio, Boost.MultiIndex, Boost.Spirit 等が使われていて、<strong>コンパイル時間に寄与</strong> しています。</p>
+
+<h2>
+<span id="犬小屋と牛舎の外側" class="fragment"></span><a href="#%E7%8A%AC%E5%B0%8F%E5%B1%8B%E3%81%A8%E7%89%9B%E8%88%8E%E3%81%AE%E5%A4%96%E5%81%B4"><i class="fa fa-link"></i></a>犬小屋と牛舎の外側</h2>
+
+<p>Wandbox のページは、以前は <a href="http://melpon.org/wandbox" class="autolink" rel="nofollow noopener" target="_blank">http://melpon.org/wandbox</a> だったのですが、今は <a href="https://wandbox.org/" class="autolink" rel="nofollow noopener" target="_blank">https://wandbox.org/</a> になっています。<br>
+独自ドメイン化と、HTTPS 対応をしました。</p>
+
+<p>HTTPS っていまいちよく分かってないですが、<a href="https://www.ssllabs.com/ssltest/analyze.html?d=wandbox.org" rel="nofollow noopener" target="_blank">SSL Server Test で A+ を貰ってる</a> ので、多分安心です。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fac80cb1b-89f1-4446-93dd-6d7b2dcf5cb1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ba58530a9196054539bb27612aa21593" target="_blank" rel="nofollow noopener"><img width="1057" alt="スクリーンショット 2017-05-18 8.46.55.png" src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fac80cb1b-89f1-4446-93dd-6d7b2dcf5cb1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ba58530a9196054539bb27612aa21593" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/ac80cb1b-89f1-4446-93dd-6d7b2dcf5cb1.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fac80cb1b-89f1-4446-93dd-6d7b2dcf5cb1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=8835cf3be6ce85d5929be44fb5dc5b8f 1x" loading="lazy"></a></p>
+
+<p>後は無駄に HTTP/2 にも対応してます。</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fbd88f622-16f3-bab0-ce71-eb26c9cf04d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=a66a0aeeae535f46b46a1854255eb8c6" target="_blank" rel="nofollow noopener"><img width="464" alt="スクリーンショット 2017-05-18 8.49.53.png" src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fbd88f622-16f3-bab0-ce71-eb26c9cf04d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=a66a0aeeae535f46b46a1854255eb8c6" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/bd88f622-16f3-bab0-ce71-eb26c9cf04d1.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fbd88f622-16f3-bab0-ce71-eb26c9cf04d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=415bbfc585809c76704b783ed1305fca 1x" loading="lazy"></a></p>
+
+<h1>
+<span id="wandbox-builder" class="fragment"></span><a href="#wandbox-builder"><i class="fa fa-link"></i></a>Wandbox Builder</h1>
+
+<p>以前はインフラ周りに <a href="https://www.chef.io/chef/" rel="nofollow noopener" target="_blank">Chef</a> を使っていましたが、今は <a href="https://www.docker.com/" rel="nofollow noopener" target="_blank">Docker</a> とシェルスクリプトに置き換わっています。</p>
+
+<p>以前から、Chef のレシピはほぼシェルスクリプトを実行するだけのレシピと化していて、これなら単にシェルスクリプト流すのと変わらないと思っていました。<br>
+なので Wandbox を複数台で運用することにしたタイミングで Chef から Docker+シェルスクリプトに移行しました。</p>
+
+<h2>
+<span id="サーバ構成" class="fragment"></span><a href="#%E3%82%B5%E3%83%BC%E3%83%90%E6%A7%8B%E6%88%90"><i class="fa fa-link"></i></a>サーバ構成</h2>
+
+<p>以前は１台の中で、犬小屋、牛舎、コンパイラのビルドを行っていました。<br>
+しかしコンパイラのビルドと、ユーザが送ってきたコードをコンパイルする処理が重なると、CPUやメモリが厳しいことになっていたので、頑張って３台に垂直分割しました。</p>
+
+<p>それぞれ以下の用途になります。</p>
+
+<ul>
+<li>犬小屋サーバ<sup id="fnref5"><a href="#fn5" rel="footnote" title="Wandboxと関係ないサービスもいくつか入っています。melpon.org の サービス とか、cpprefjp の 変換サーバ とか。">5</a></sup> </li>
+<li>牛舎サーバ</li>
+<li>ビルド用サーバ</li>
+</ul>
+
+<p>ビルド用サーバでビルドしたコンパイラを <code>rsync</code> で牛舎サーバに送ることで、牛舎用サーバに入っているコンパイラを更新しています。</p>
+
+<h2>
+<span id="コンパイラのビルド" class="fragment"></span><a href="#%E3%82%B3%E3%83%B3%E3%83%91%E3%82%A4%E3%83%A9%E3%81%AE%E3%83%93%E3%83%AB%E3%83%89"><i class="fa fa-link"></i></a>コンパイラのビルド</h2>
+
+<p>以前の環境では、全てのコンパイラのビルドを１サーバ内で行っていましたが、この方法でビルドするのは厳しいものがあります。<br>
+クリーンな環境でコンパイルしていない場合、コンパイルするために必要なパッケージが何だったのかを把握できません。<br>
+そのため、新しい環境でビルドスクリプトを実行してみるとビルドに失敗することが本当に多いのです。</p>
+
+<p>ということで <strong>ビルド環境とビルドスクリプトはセットになっている必要がある</strong> という結論に至りました。<br>
+丁度 Docker という、仮想マシンより手軽に仮想環境が手に入る時代になっていたので、それを使うことにしました。</p>
+
+<p>コンパイラのビルドは、そのコンパイラ用に作った Docker 環境内で行います。<br>
+成果物だけ、マウントしたディレクトリに出力するようにしています。</p>
+
+<p>これでビルドスクリプトは常に同じ環境で実行されるようになるので、ローカル環境が何であっても安定してビルドできるようになりました。</p>
+
+<p>副次的な効果として、ローカルには Docker と git だけ入れておけば、誰でも簡単に各種コンパイラのビルドが可能になっています。<sup id="fnref6"><a href="#fn6" rel="footnote" title="当然 Wandbox 上で動くことだけを目的にしてバイナリを作っているので、ビルドできたからといって他の環境で動くとは限らない">6</a></sup></p>
+
+<p>また、ビルドに使った Docker 環境は <a href="https://hub.docker.com/r/melpon/wandbox/tags/" rel="nofollow noopener" target="_blank">Docker Hub に置いている</a> ので、イメージをビルドする必要もありません。<sup id="fnref7"><a href="#fn7" rel="footnote" title="Dockerfile もコミットしてるので、必要であればビルドすることも可能。当然 Docker Hub の melpon/wandbox に push することはできませんが。">7</a></sup></p>
+
+<p>なお、コンパイラを追加する方法は <a href="https://github.com/melpon/wandbox-builder/blob/master/README.jp.md" rel="nofollow noopener" target="_blank">ドキュメントに書いてる</a> ので、<strong>Wandbox にコンパイラを追加して欲しいと思ったら pull req 下さい</strong>。</p>
+
+<h2>
+<span id="コンパイラのテスト" class="fragment"></span><a href="#%E3%82%B3%E3%83%B3%E3%83%91%E3%82%A4%E3%83%A9%E3%81%AE%E3%83%86%E3%82%B9%E3%83%88"><i class="fa fa-link"></i></a>コンパイラのテスト</h2>
+
+<p>コンパイラのビルド時に必要な環境と、実行時に必要な環境は異なります。<br>
+ビルドが成功して本番サーバ（牛舎サーバ）にコピーしたはいいけど、本番サーバで実行してみると、<strong>ダイナミックライブラリが足りなくてクラッシュする</strong> のはよくあることです。</p>
+
+<p>コンパイラが動くかを本番サーバに適用する前に確認するため、本番サーバと同等の環境を <a href="https://github.com/melpon/wandbox-builder/blob/master/test/test-server/Dockerfile" rel="nofollow noopener" target="_blank">Dockerfile</a> で提供しています。<br>
+この Docker 環境を使ってテストすることで、本番サーバでエラー無く動かせるようにしています。<br>
+実際、この Docker 環境でテストして動いたのに、本番サーバだと動かないということは <strong>一度もありませんでした</strong>。</p>
+
+<p>本番サーバは全コンパイラが実行できるようにしないといけないので、必要なパッケージは膨れ上がります。<br>
+静的リンクを駆使して、可能な限り実行時に必要なパッケージを減らしているのですが、それでも結構いろいろと入れるハメになっています。</p>
+
+<h2>
+<span id="ビルドを書きまくった感想" class="fragment"></span><a href="#%E3%83%93%E3%83%AB%E3%83%89%E3%82%92%E6%9B%B8%E3%81%8D%E3%81%BE%E3%81%8F%E3%81%A3%E3%81%9F%E6%84%9F%E6%83%B3"><i class="fa fa-link"></i></a>ビルドを書きまくった感想</h2>
+
+<p>コンパイラのビルドは本当に大変だというのがよく分かりました。<br>
+<a href="https://github.com/melpon/wandbox-builder/tree/master/build" rel="nofollow noopener" target="_blank">このあたり</a> を見て貰えれば分かると思いますが、ほんとビルドする環境の数が多い。<br>
+それに加えて、バージョン毎の分岐もあるというのが大変です。</p>
+
+<p>例えば <a href="https://github.com/melpon/wandbox-builder/blob/master/build/clang/install.sh" rel="nofollow noopener" target="_blank">Clang のビルドスクリプト</a> では、ビルドするためにバージョン毎に分岐を大量に入れる必要がありました。<br>
+また、<a href="https://github.com/melpon/wandbox-builder/blob/f4fd53e976bfc072f9463de87bd861aa002d32eb/cattleshed-conf/compilers.py#L776-L839" rel="nofollow noopener" target="_blank">Clang のコンパイルコマンド</a> にもかなり分岐が入っています。</p>
+
+<p>また、<a href="https://ja.wikipedia.org/wiki/%E3%83%96%E3%83%BC%E3%83%88%E3%82%B9%E3%83%88%E3%83%A9%E3%83%83%E3%83%97%E5%95%8F%E9%A1%8C" rel="nofollow noopener" target="_blank">ブートストラップ問題</a> にもよく引っかかりました。<br>
+通常、最初のコンパイルで使用するコンパイラは、<code>apt-get</code> でインストールしておくのが多分一番簡単です。</p>
+
+<p>通常、古いコンパイラをビルドする場合、そのコンパイラは古いコンパイラ自身でコンパイルされています。<br>
+つまり古いコンパイラは、その古いコンパイラでのみコンパイルが通ることを確認しているのです。未来のコンパイラなんて取ってこれる訳が無いので当然です。</p>
+
+<p>そして <code>apt-get</code> でインストールされるコンパイラは（比較的）新しいコンパイラになります。<br>
+つまりどうなるかというと、<strong>古いコンパイラを、新しいコンパイラを使ってコンパイルする</strong> ことになります。<br>
+この場合、古いコンパイラがよっぽど互換性を持っていない限りはビルドに失敗します。</p>
+
+<p>大体の古いコンパイラはこれが原因でビルドに失敗しました。<br>
+いくつかはパッチを当てることでビルドさせたりもしたのですが、そのバージョンをビルドすることを諦めた言語も結構あります。<br>
+別の安定した言語、例えば C++ あたりでコンパイラを書いてくれていれば、こんな問題に引っかかることも少なかったんじゃないかなと思います。</p>
+
+<h1>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h1>
+
+<p>ということで Wandbox は上記の技術を使って書いています。<br>
+Wandbox の資産は <strong>大量に用意されたコンパイラ</strong> なので、ビルド周りは特に頑張って改善しました。<br>
+これらの資産を活用しつつ、今後もサービスを続けていこうと思います。</p>
+
+<p>なお Wandbox はいつでも <a href="https://gist.github.com/melpon/8f5d7a8e991ed466d09cf887bd8d92ce" rel="nofollow noopener" target="_blank">スポンサーを募集</a> しているので、melponのやる気を出させたい、OSSにお金で貢献したい、Wandbox に自分の名前を載せたい、などあれば是非スポンサーになってみて下さい。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>犬小屋と牛舎の間は、TCP の上で自作のプロトコルを定義してやりとりしています。普通に JSON 使うだけだと TCP で受信するべきバイト数が分からないので困る。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>今の自分なら、少なくとも <a href="https://www.slideshare.net/melpon/mono-is-dead" rel="nofollow noopener" target="_blank">Mono は絶対に無い</a> と言えます。 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>元ネタは<a href="http://wikiwiki.jp/livejupiter/?%A4%E4%A4%C3%A4%D1%A4%EA%A5%AB%A1%BC%A5%D7%A4%AC%A5%CA%A5%F3%A5%D0%A1%BC%A5%EF%A5%F3" rel="nofollow noopener" target="_blank">やっぱりカープがナンバーワン</a> <a href="#fnref3">↩</a></p>
+</li>
+
+<li id="fn4">
+<p>なぜそうしたのか？というのに関しては <a href="https://twitter.com/kikairoya" rel="nofollow noopener" target="_blank">@kikairoya</a> に直接聞いて下さい <a href="#fnref4">↩</a></p>
+</li>
+
+<li id="fn5">
+<p>Wandboxと関係ないサービスもいくつか入っています。melpon.org の <a href="https://github.com/melpon/melpon.org" rel="nofollow noopener" target="_blank">サービス</a> とか、cpprefjp の <a href="https://github.com/cpprefjp/site_generator" rel="nofollow noopener" target="_blank">変換サーバ</a> とか。 <a href="#fnref5">↩</a></p>
+</li>
+
+<li id="fn6">
+<p>当然 Wandbox 上で動くことだけを目的にしてバイナリを作っているので、ビルドできたからといって他の環境で動くとは限らない <a href="#fnref6">↩</a></p>
+</li>
+
+<li id="fn7">
+<p>Dockerfile もコミットしてるので、必要であればビルドすることも可能。当然 Docker Hub の melpon/wandbox に push することはできませんが。 <a href="#fnref7">↩</a></p>
+</li>
+
+</ol>
+</div>

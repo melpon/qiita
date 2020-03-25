@@ -1,0 +1,26 @@
+<p>Elixir から AWS を叩く人は多分大体の人が使ってる <a href="https://hex.pm/packages/ex_aws" rel="nofollow noopener" target="_blank">ex_aws</a> ですが、バージョン 2.0 からサービスごとにパッケージが分割されることになりました。</p>
+
+<p>そのため、例えば S3 と Dynamo が使いたいなら、<code>mix.exs</code> に以下のように書くことになります。（バージョンは適当です）</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defp</span> <span class="n">deps</span> <span class="k">do</span>
+  <span class="p">[</span>
+    <span class="p">{</span><span class="ss">:ex_aws</span><span class="p">,</span> <span class="s2">"~&gt; 2.0"</span><span class="p">},</span>
+    <span class="c1"># 追加が必要な部分</span>
+    <span class="p">{</span><span class="ss">:ex_aws_s3</span><span class="p">,</span> <span class="s2">"~&gt; 2.0"</span><span class="p">},</span>
+    <span class="p">{</span><span class="ss">:ex_aws_dynamo</span><span class="p">,</span> <span class="s2">"~&gt; 2.0"</span><span class="p">},</span>
+    <span class="c1"># この辺は以前と同じもので大丈夫</span>
+    <span class="p">{</span><span class="ss">:poison</span><span class="p">,</span> <span class="s2">"~&gt; 3.0"</span><span class="p">},</span>
+    <span class="p">{</span><span class="ss">:hackney</span><span class="p">,</span> <span class="s2">"~&gt; 1.9"</span><span class="p">},</span>
+  <span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>というのも、AWS のサービスが多すぎて CargoSense（多分ExAws作者の所属する組織）で ExAws を管理するのが難しくなってきたからだそうです。<br>
+なのでパッケージをコア部分と各サービスに分けて、CargoSense で ExAws のコア部分と S3 だけメンテナンスして、既存のサービスはやりたい人にメンテナを設定して、新しいサービスについては欲しい人が作ればいい、という方針にするようです。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://elixirforum.com/t/proposal-exaws-2-0/9269" rel="nofollow noopener" target="_blank">Proposal: ExAws 2.0 - Libraries - Elixir Forum</a></li>
+</ul>

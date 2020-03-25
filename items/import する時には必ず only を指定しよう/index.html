@@ -1,0 +1,59 @@
+<p><code>import Foo</code> と書くと、<code>Foo</code> モジュールにある全ての関数が使えるようになります。<br>
+こうするとモジュール名を書かずに済むため便利ですが、私は<strong><code>import Foo</code> は使うべきではない</strong>と考えています。</p>
+
+<p><code>import Foo</code> が良くない理由は簡単で、ソースコードを追うのがとても辛くなるからです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Hoge</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">Foo</span>
+  <span class="kn">import</span> <span class="no">Bar</span>
+
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">encode</span><span class="p">(%{</span><span class="ss">foo:</span> <span class="ss">:bar</span><span class="p">})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>と書いた時、<code>encode/1</code> は <code>Foo</code> モジュールと <code>Bar</code> モジュールのどちらにあるか分かるでしょうか？</p>
+
+<p>これが分かる人は、<code>Foo</code> モジュールか <code>Bar</code> モジュールについて詳しい人だけで、それらを知らずにこのコードを見た人はまず分かりません。<br>
+いきなり <code>Foo</code> モジュールと <code>Bar</code> モジュールのドキュメントを開いて、どちらのモジュールに <code>encode/1</code> があるか探し回ることになる訳です。<sup id="fnref1"><a href="#fn1" rel="footnote" title="なお、use Foo とか use Bar の場合はもっと深刻で、Foo モジュールの __using__/1 内で import してる Foo.Piyo モジュールにあるかもしれないし、あるいは AnotherFoo.Helper モジュールにあるかもしれません。">1</a></sup></p>
+
+<p>そのため、以下のような書き方をするのがいいでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Hoge</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">Foo</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">encode:</span> <span class="mi">1</span><span class="p">]</span>
+  <span class="kn">import</span> <span class="no">Bar</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">barcode:</span> <span class="mi">1</span><span class="p">]</span>
+
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">encode</span><span class="p">(%{</span><span class="ss">foo:</span> <span class="ss">:bar</span><span class="p">})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>あるいは <code>encode/1</code> が関数なら以下のように書いても構いません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Hoge</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">Foo</span><span class="o">.</span><span class="n">encode</span><span class="p">(%{</span><span class="ss">foo:</span> <span class="ss">:bar</span><span class="p">})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これらの方法であれば、<code>encode/1</code> がどちらのモジュールにあるかすぐに分かります。</p>
+
+<p>つまり、読みやすいコードを書くために、<strong><code>import Foo, only: [...]</code> する</strong>、あるいは <strong><code>import</code> せずにモジュール名を完全修飾して呼び出す</strong> のがいいでしょう。<sup id="fnref2"><a href="#fn2" rel="footnote" title="これは Elixir の IDE あたりがあれば解決するかもしれません（現在これをちゃんと解決できる IDE があるのかどうかは知りませんが）。ただ、それをするならプロジェクト全体で IDE を使うことをルール上定めておく必要があるでしょう。">2</a></sup></p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>なお、<code>use Foo</code> とか <code>use Bar</code> の場合はもっと深刻で、<code>Foo</code> モジュールの <code>__using__/1</code> 内で import してる <code>Foo.Piyo</code> モジュールにあるかもしれないし、あるいは <code>AnotherFoo.Helper</code> モジュールにあるかもしれません。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>これは Elixir の IDE あたりがあれば解決するかもしれません（現在これをちゃんと解決できる IDE があるのかどうかは知りませんが）。ただ、それをするならプロジェクト全体で IDE を使うことをルール上定めておく必要があるでしょう。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

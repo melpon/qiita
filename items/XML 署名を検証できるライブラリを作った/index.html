@@ -1,0 +1,154 @@
+<p>Elixir で <a href="https://ja.wikipedia.org/wiki/Security_Assertion_Markup_Language" rel="nofollow noopener" target="_blank">SAML</a> を使ったシングルサインオンが必要そうだったので、XML 署名を検証できるライブラリを作りました。</p>
+
+<h2>
+<span id="saml-とは" class="fragment"></span><a href="#saml-%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>SAML とは</h2>
+
+<p>乱暴に言えば、XML 版の OAuth みたいな奴です。</p>
+
+<p>クライアントとサーバ間でユーザ認証するのではなく、クライアントと第三者の認証機関（Identity Provider(IdP) と呼ぶ）の間でユーザ認証を行います。</p>
+
+<p>IdPとクライアント間で認証が終わったら、IdP は SAML レスポンスと呼ばれる XML のデータを返すので、クライアントはこれをそのままサーバに投げると、サーバはこのデータを見てユーザを識別したり各操作を許可したりします。</p>
+
+<p>ただ、サーバが無条件にこの SAML レスポンスを信用してしまうと、ユーザはいくらでも偽装したり操作を許可したり出来てしまいます。<br>
+そのため、この SAML レスポンスが、確実に指定した IdP が返した SAML レスポンスであり、クライアントによって一切手を加えられていない状態であることを確認する必要があります。<sup id="fnref1"><a href="#fn1" rel="footnote" title="単に手を加えられてないことを確認するだけだとリプレイ攻撃が出来てしまうので、SAML レスポンスに生存期間を付けて、サーバで検証後にその期間内に入っているかもチェックする必要があります（生存期間の情報は、署名の検証によって手が加えられてないことが保証されている）。あと SAML レスポンスが他人に傍受されるのもまずそうなので、通信は全て HTTPS で行った方がいいでしょう。">1</a></sup></p>
+
+<p>SAML レスポンスは <a href="https://ja.wikipedia.org/wiki/XML%E7%BD%B2%E5%90%8D" rel="nofollow noopener" target="_blank">XML 署名</a> という仕様によって署名されているので、この XML 署名によって署名された SAML レスポンスの検証を行うためのライブラリを作りました。</p>
+
+<h2>
+<span id="なぜ既存のライブラリを使わなかったのか" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C%E6%97%A2%E5%AD%98%E3%81%AE%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA%E3%82%92%E4%BD%BF%E3%82%8F%E3%81%AA%E3%81%8B%E3%81%A3%E3%81%9F%E3%81%AE%E3%81%8B"><i class="fa fa-link"></i></a>なぜ既存のライブラリを使わなかったのか</h2>
+
+<p>SAML 認証を行う既存のライブラリとしては <a href="https://hex.pm/packages/samly" rel="nofollow noopener" target="_blank">samly</a> があります。<br>
+このライブラリは、XML 署名を検証するために <a href="https://hex.pm/packages/esaml" rel="nofollow noopener" target="_blank">esaml</a> というライブラリを使っているのですが、コードを見たりいろいろ弄った限りだと、</p>
+
+<ul>
+<li>ルート証明書を確認しないので自己署名でも通る<sup id="fnref2"><a href="#fn2" rel="footnote" title="SAML で自己署名するのは別に問題ない気もするけど、XML 署名単体で考えると良くない。">2</a></sup>
+</li>
+<li>検証が rsa + sha1 or sha256 にしか対応してない</li>
+<li>Erlang の XML ライブラリ xmerl にバグがある<sup id="fnref3"><a href="#fn3" rel="footnote" title="いろんな XML を食わせて libxml と比較してたら見つけました。Wrong attribute-value normalization に報告しています。">3</a></sup>のでちゃんと XML 正規化ができない</li>
+<li>XML 正規化の xml-exc-c14n のコメント無しバージョンにしか対応していない</li>
+<li>正直 XML 正規化は複雑過ぎるので、多分 esaml はまだ問題があると思われる</li>
+</ul>
+
+<p>というのがあり、ちゃんとライブラリを作った方が良さそうだったので、SAML のために、まずは XML 署名のライブラリを作ってみることにしました。</p>
+
+<h2>
+<span id="xml-署名と-xml-正規化の辛さ" class="fragment"></span><a href="#xml-%E7%BD%B2%E5%90%8D%E3%81%A8-xml-%E6%AD%A3%E8%A6%8F%E5%8C%96%E3%81%AE%E8%BE%9B%E3%81%95"><i class="fa fa-link"></i></a>XML 署名と XML 正規化の辛さ</h2>
+
+<p>ところで、これが XML 署名の目次の一部です。</p>
+
+<p><a href="https://www.w3.org/TR/xmldsig-core/" rel="nofollow noopener" target="_blank">XML Signature Syntax and Processing Version 1.1</a></p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fa384ce27-ef82-a692-2009-35f584a7c966.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=a4cad91497665bf459f3f8aa84f2c391" target="_blank" rel="nofollow noopener"><img width="581" alt="スクリーンショット 2017-12-20 23.21.43.png" src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fa384ce27-ef82-a692-2009-35f584a7c966.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=a4cad91497665bf459f3f8aa84f2c391" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/a384ce27-ef82-a692-2009-35f584a7c966.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fa384ce27-ef82-a692-2009-35f584a7c966.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=0a009e4b613f02f273b9cd096ce4ab64 1x" loading="lazy"></a></p>
+
+<p>自分の知ってる署名は、例えば POST で渡された <code>x=10&amp;y=20</code> みたいなデータを昇順にソートし直してちょっとシグネチャ計算するだけというイメージだったのですが、どうやら全く違うようです。<br>
+ヤバそうな気配を感じます。</p>
+
+<p>ところで、XML 署名を検証するためには、必要な部分を取り出した後、<a href="https://ja.wikipedia.org/wiki/Canonical_XML" rel="nofollow noopener" target="_blank">XML 正規化</a> (Canonicalization, C14N) と呼ばれる XML の変換作業を行う必要があります。</p>
+
+<p>例えば <a href="https://www.w3.org/TR/2001/REC-xml-c14n-20010315" rel="nofollow noopener" target="_blank">Canonical XML Version 1.0</a> の 3.3 のサンプルを見ると、</p>
+
+<div class="code-frame" data-lang="xml"><div class="highlight"><pre><span class="cp">&lt;!DOCTYPE doc [&lt;!ATTLIST e9 attr CDATA "default"&gt;</span>]&gt;
+<span class="nt">&lt;doc&gt;</span>
+   <span class="nt">&lt;e1</span>   <span class="nt">/&gt;</span>
+   <span class="nt">&lt;e2</span>   <span class="nt">&gt;&lt;/e2&gt;</span>
+   <span class="nt">&lt;e3</span>   <span class="na">name =</span> <span class="s">"elem3"</span>   <span class="na">id=</span><span class="s">"elem3"</span>   <span class="nt">/&gt;</span>
+   <span class="nt">&lt;e4</span>   <span class="na">name=</span><span class="s">"elem4"</span>   <span class="na">id=</span><span class="s">"elem4"</span>   <span class="nt">&gt;&lt;/e4&gt;</span>
+   <span class="nt">&lt;e5</span> <span class="na">a:attr=</span><span class="s">"out"</span> <span class="na">b:attr=</span><span class="s">"sorted"</span> <span class="na">attr2=</span><span class="s">"all"</span> <span class="na">attr=</span><span class="s">"I'm"</span>
+      <span class="na">xmlns:b=</span><span class="s">"http://www.ietf.org"</span>
+      <span class="na">xmlns:a=</span><span class="s">"http://www.w3.org"</span>
+      <span class="na">xmlns=</span><span class="s">"http://example.org"</span><span class="nt">/&gt;</span>
+   <span class="nt">&lt;e6</span> <span class="na">xmlns=</span><span class="s">""</span> <span class="na">xmlns:a=</span><span class="s">"http://www.w3.org"</span><span class="nt">&gt;</span>
+      <span class="nt">&lt;e7</span> <span class="na">xmlns=</span><span class="s">"http://www.ietf.org"</span><span class="nt">&gt;</span>
+         <span class="nt">&lt;e8</span> <span class="na">xmlns=</span><span class="s">""</span> <span class="na">xmlns:a=</span><span class="s">"http://www.w3.org"</span><span class="nt">&gt;</span>
+            <span class="nt">&lt;e9</span> <span class="na">xmlns=</span><span class="s">""</span> <span class="na">xmlns:a=</span><span class="s">"http://www.ietf.org"</span><span class="nt">/&gt;</span>
+         <span class="nt">&lt;/e8&gt;</span>
+      <span class="nt">&lt;/e7&gt;</span>
+   <span class="nt">&lt;/e6&gt;</span>
+<span class="nt">&lt;/doc&gt;</span>
+</pre></div></div>
+
+<p>この XML を XML 正規化した時に、</p>
+
+<div class="code-frame" data-lang="xml"><div class="highlight"><pre><span class="nt">&lt;doc&gt;</span>
+   <span class="nt">&lt;e1&gt;&lt;/e1&gt;</span>
+   <span class="nt">&lt;e2&gt;&lt;/e2&gt;</span>
+   <span class="nt">&lt;e3</span> <span class="na">id=</span><span class="s">"elem3"</span> <span class="na">name=</span><span class="s">"elem3"</span><span class="nt">&gt;&lt;/e3&gt;</span>
+   <span class="nt">&lt;e4</span> <span class="na">id=</span><span class="s">"elem4"</span> <span class="na">name=</span><span class="s">"elem4"</span><span class="nt">&gt;&lt;/e4&gt;</span>
+   <span class="nt">&lt;e5</span> <span class="na">xmlns=</span><span class="s">"http://example.org"</span> <span class="na">xmlns:a=</span><span class="s">"http://www.w3.org"</span> <span class="na">xmlns:b=</span><span class="s">"http://www.ietf.org"</span> <span class="na">attr=</span><span class="s">"I'm"</span> <span class="na">attr2=</span><span class="s">"all"</span> <span class="na">b:attr=</span><span class="s">"sorted"</span> <span class="na">a:attr=</span><span class="s">"out"</span><span class="nt">&gt;&lt;/e5&gt;</span>
+   <span class="nt">&lt;e6</span> <span class="na">xmlns:a=</span><span class="s">"http://www.w3.org"</span><span class="nt">&gt;</span>
+      <span class="nt">&lt;e7</span> <span class="na">xmlns=</span><span class="s">"http://www.ietf.org"</span><span class="nt">&gt;</span>
+         <span class="nt">&lt;e8</span> <span class="na">xmlns=</span><span class="s">""</span><span class="nt">&gt;</span>
+            <span class="nt">&lt;e9</span> <span class="na">xmlns:a=</span><span class="s">"http://www.ietf.org"</span> <span class="na">attr=</span><span class="s">"default"</span><span class="nt">&gt;&lt;/e9&gt;</span>
+         <span class="nt">&lt;/e8&gt;</span>
+      <span class="nt">&lt;/e7&gt;</span>
+   <span class="nt">&lt;/e6&gt;</span>
+<span class="nt">&lt;/doc&gt;</span>
+</pre></div></div>
+
+<p>このようになる必要があると定義しています。</p>
+
+<p>タグの空白が消えてたり、でもタグとタグの間の空白や改行は消えてなかったり、属性の順番が変わっていたり、名前空間が統合されていたり、<code>DOCTYPE</code> に書かれている属性が <code>&lt;e9&gt;</code> タグに適用されてたりしています。</p>
+
+<p>また、XML 正規化の仕様は、Canonical XML Version 1.0 の他にも <a href="https://www.w3.org/TR/xml-c14n/" rel="nofollow noopener" target="_blank">Canonical XML Version 1.1</a><br>
+ と <a href="https://www.w3.org/TR/xml-exc-c14n/" rel="nofollow noopener" target="_blank">Exclusive XML Canonicalization Version 1.0</a> があり、それぞれ微妙に仕様が違います。<br>
+かなりヤバそうな気配を感じます。</p>
+
+<h2>
+<span id="libxml" class="fragment"></span><a href="#libxml"><i class="fa fa-link"></i></a>libxml</h2>
+
+<p>ということで、最初は xmerl を使って XML 正規化を頑張って手で書いていたのですが、複雑過ぎて死にそうだったのと、前述した通り xmerl にバグがあったこともあり、心が折れたので既存のライブラリを使うことにしました。<br>
+<del>XML 署名や XML 正規化は人間が書くものじゃない。</del></p>
+
+<p>信頼のおける XML ライブラリといえば C で書かれた <a href="http://xmlsoft.org/" rel="nofollow noopener" target="_blank">Libxml2</a> です。<br>
+このライブラリは <a href="http://xmlsoft.org/html/libxml-c14n.html" rel="nofollow noopener" target="_blank">C14N も実装している</a> ので、これを使えばかなり楽ができそうです。</p>
+
+<p>Libxml2 の Elixir ラッパーは存在しなかったので、まずこれを作りました。<sup id="fnref4"><a href="#fn4" rel="footnote" title="SAML 認証するための XML 署名するための XML 正規化するための XML ライブラリのラッパーを実装する。完全に ヤクの毛刈り です。">4</a></sup></p>
+
+<ul>
+<li><a href="https://hex.pm/packages/libxml" rel="nofollow noopener" target="_blank">hex.pm</a></li>
+<li><a href="https://github.com/melpon/libxml" rel="nofollow noopener" target="_blank">GitHub</a></li>
+</ul>
+
+<p>Libxml2 の薄いラッパーなので、当然ながら NIF を使っていて、ちょっとでも使い方を間違えると落ちるので注意して下さい。</p>
+
+<h2>
+<span id="sign_xml" class="fragment"></span><a href="#sign_xml"><i class="fa fa-link"></i></a>sign_xml</h2>
+
+<p>これで XML の読み書きと XML 正規化が出来るようになったので、あとは XML 署名の検証を行うだけです。<br>
+これは Python の <a href="https://pypi.python.org/pypi/signxml" rel="nofollow noopener" target="_blank">signxml</a> の実装を見ながら作りました。</p>
+
+<ul>
+<li><a href="https://hex.pm/packages/sign_xml" rel="nofollow noopener" target="_blank">hex.pm</a></li>
+<li><a href="https://github.com/melpon/sign_xml" rel="nofollow noopener" target="_blank">GitHub</a></li>
+</ul>
+
+<p>大体 signxml と同程度のテストが通るようになったので、これで問題ないかなと思います。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>SAML のために XML 署名のライブラリを書きました。<br>
+仕様は複雑ですが、利用するのは簡単だと思うので、Elixir のサーバで SAML のシングルサインオンがしたくなった場合は、利用を検討してみて下さい。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>単に手を加えられてないことを確認するだけだとリプレイ攻撃が出来てしまうので、SAML レスポンスに生存期間を付けて、サーバで検証後にその期間内に入っているかもチェックする必要があります（生存期間の情報は、署名の検証によって手が加えられてないことが保証されている）。あと SAML レスポンスが他人に傍受されるのもまずそうなので、通信は全て HTTPS で行った方がいいでしょう。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>SAML で自己署名するのは別に問題ない気もするけど、XML 署名単体で考えると良くない。 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>いろんな XML を食わせて libxml と比較してたら見つけました。<a href="https://bugs.erlang.org/browse/ERL-475" rel="nofollow noopener" target="_blank">Wrong attribute-value normalization</a> に報告しています。 <a href="#fnref3">↩</a></p>
+</li>
+
+<li id="fn4">
+<p>SAML 認証するための XML 署名するための XML 正規化するための XML ライブラリのラッパーを実装する。完全に <a href="https://ja.wiktionary.org/wiki/yak_shaving" rel="nofollow noopener" target="_blank">ヤクの毛刈り</a> です。 <a href="#fnref4">↩</a></p>
+</li>
+
+</ol>
+</div>

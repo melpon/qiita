@@ -1,0 +1,350 @@
+<p>Phoenixのコントローラが、どのように呼ばれているのかが気になったので調べた。<br>
+<a href="http://qiita.com/melpon/items/b9a712e784e7b9919ce6" id="reference-82d4caac5a4a74a9e75a">Phoenixのルーティング</a> と同じ環境で試している。</p>
+
+<p>前回では、ルーティングによって最終的に <code>HelloWorld.PageController</code> の <code>init/1</code> と <code>call/2</code> が呼ばれることが分かった。<br>
+ここから <code>HelloWorld.PageController.index/2</code> が呼ばれるところまで見ていく。</p>
+
+<h2>
+<span id="helloworldpagecontroller" class="fragment"></span><a href="#helloworldpagecontroller"><i class="fa fa-link"></i></a>HelloWorld.PageController</h2>
+
+<p><code>hello_world/web/controllers/page_controller.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="p">,</span> <span class="ss">:controller</span>
+
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">render</span> <span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>use HelloWorld.Web, :controller</code> によって、<code>HelloWorld.Web.__using__/1</code> が展開される。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span> <span class="k">do</span>
+  <span class="o">...</span>
+
+  <span class="k">def</span> <span class="n">controller</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+      <span class="n">alias</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Repo</span>
+      <span class="kn">import</span> <span class="no">Ecto</span>
+      <span class="kn">import</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Query</span>
+
+      <span class="kn">import</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span><span class="o">.</span><span class="no">Helpers</span>
+      <span class="kn">import</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Gettext</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="o">...</span>
+
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">which</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_atom</span><span class="p">(</span><span class="n">which</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">apply</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">which</span><span class="p">,</span> <span class="p">[])</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>apply(__MODULE__, which, [])</code> によって <code>controller/0</code> が呼び出され、この内容が <code>HelloWorld.PageController</code> 内に展開される。<br>
+その中で使っている <code>use Phoenix.Controller</code> によって、更にこれが展開される。</p>
+
+<p><code>phoenix/lib/phoenix/controller.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="ss">bind_quoted:</span> <span class="p">[</span><span class="ss">opts:</span> <span class="n">opts</span><span class="p">]</span> <span class="k">do</span>
+      <span class="kn">import</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+      <span class="c1"># TODO v2: No longer automatically import dependencies</span>
+      <span class="kn">import</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span>
+
+      <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="no">Pipeline</span><span class="p">,</span> <span class="n">opts</span>
+
+      <span class="n">plug</span> <span class="ss">:put_new_layout</span><span class="p">,</span> <span class="p">{</span><span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="n">__layout__</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">opts</span><span class="p">),</span> <span class="ss">:app</span><span class="p">}</span>
+      <span class="n">plug</span> <span class="ss">:put_new_view</span><span class="p">,</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="n">__view__</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p>更に <code>use Phoenix.Controller.Pipeline, opts</code> が展開される。</p>
+
+<p><code>phoenix/lib/phoenix/controller/pipeline.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="nv">@doc</span> <span class="no">false</span>
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="ss">bind_quoted:</span> <span class="p">[</span><span class="ss">opts:</span> <span class="n">opts</span><span class="p">]</span> <span class="k">do</span>
+      <span class="nv">@behaviour</span> <span class="no">Plug</span>
+
+      <span class="kn">require</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Endpoint</span>
+      <span class="kn">import</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="no">Pipeline</span>
+
+      <span class="no">Module</span><span class="o">.</span><span class="n">register_attribute</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="ss">:plugs</span><span class="p">,</span> <span class="ss">accumulate:</span> <span class="no">true</span><span class="p">)</span>
+      <span class="nv">@before_compile</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="no">Pipeline</span>
+      <span class="nv">@phoenix_log_level</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:log</span><span class="p">,</span> <span class="ss">:debug</span><span class="p">)</span>
+      <span class="nv">@phoenix_fallback</span> <span class="ss">:unregistered</span>
+
+      <span class="nv">@doc</span> <span class="no">false</span>
+      <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">opts</span>
+
+      <span class="nv">@doc</span> <span class="no">false</span>
+      <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_atom</span><span class="p">(</span><span class="n">action</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">conn</span> <span class="o">=</span> <span class="n">update_in</span> <span class="n">conn</span><span class="o">.</span><span class="n">private</span><span class="p">,</span>
+                 <span class="o">&amp;</span><span class="p">(</span><span class="nv">&amp;1</span> <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:phoenix_controller</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+                      <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:phoenix_action</span><span class="p">,</span> <span class="n">action</span><span class="p">))</span>
+
+        <span class="no">Phoenix</span><span class="o">.</span><span class="no">Endpoint</span><span class="o">.</span><span class="n">instrument</span> <span class="n">conn</span><span class="p">,</span> <span class="ss">:phoenix_controller_call</span><span class="p">,</span>
+          <span class="p">%{</span><span class="ss">conn:</span> <span class="n">conn</span><span class="p">,</span> <span class="ss">log_level:</span> <span class="nv">@phoenix_log_level</span><span class="p">},</span> <span class="k">fn</span> <span class="o">-&gt;</span>
+          <span class="n">phoenix_controller_pipeline</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+
+      <span class="nv">@doc</span> <span class="no">false</span>
+      <span class="k">def</span> <span class="n">action</span><span class="p">(%</span><span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="p">{</span><span class="ss">private:</span> <span class="p">%{</span><span class="ss">phoenix_action:</span> <span class="n">action</span><span class="p">}}</span> <span class="o">=</span> <span class="n">conn</span><span class="p">,</span> <span class="n">_options</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">apply</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="p">[</span><span class="n">conn</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">params</span><span class="p">])</span>
+      <span class="k">end</span>
+
+      <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">init:</span> <span class="mi">1</span><span class="p">,</span> <span class="ss">call:</span> <span class="mi">2</span><span class="p">,</span> <span class="ss">action:</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p>ここに <code>init/1</code> と <code>call/2</code> が定義されていた。<br>
+この定義によって、<code>HelloWorld.PageController</code> は <code>HelloWorld.Router</code> からの <code>init/1</code> と <code>call/2</code> 呼び出しを受けることができるようになっている。<br>
+また、<code>defoverridable</code> になっているので、<code>init/1</code> と <code>call/2</code> を自分で定義すれば、これらの関数をオーバーライドすることもできる。</p>
+
+<p><code>call/2</code> では、<code>conn.private</code> に値を入れて、<code>Phoenix.Endpoint.instrument/4</code> の中で <code>phoenix_controller_pipeline/2</code> を呼び出しているだけである。</p>
+
+<p><code>Phoenix.Endpoint.instrument</code> は時間計測するためのマクロで、<a href="https://hexdocs.pm/phoenix/Phoenix.Endpoint.html" rel="nofollow noopener" target="_blank">Phoenix.Endpoint</a> の Instrumentation に詳細が書かれてる。</p>
+
+<p><code>phoenix_controller_pipeline/2</code> は <code>__before_compile__/1</code> で定義される関数で、以下の様になっている。</p>
+
+<p><code>phoenix/lib/phoenix/controller/pipeline.ex</code>:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="nv">@doc</span> <span class="no">false</span>
+  <span class="k">defmacro</span> <span class="n">__before_compile__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">action</span> <span class="o">=</span> <span class="p">{</span><span class="ss">:action</span><span class="p">,</span> <span class="p">[],</span> <span class="no">true</span><span class="p">}</span>
+    <span class="n">plugs</span>  <span class="o">=</span> <span class="p">[</span><span class="n">action</span><span class="o">|</span><span class="no">Module</span><span class="o">.</span><span class="n">get_attribute</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">module</span><span class="p">,</span> <span class="ss">:plugs</span><span class="p">)]</span>
+    <span class="p">{</span><span class="n">conn</span><span class="p">,</span> <span class="n">body</span><span class="p">}</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">plugs</span><span class="p">,</span> <span class="ss">log_on_halt:</span> <span class="ss">:debug</span><span class="p">)</span>
+    <span class="n">fallback_ast</span> <span class="o">=</span>
+      <span class="n">env</span><span class="o">.</span><span class="n">module</span>
+      <span class="o">|&gt;</span> <span class="no">Module</span><span class="o">.</span><span class="n">get_attribute</span><span class="p">(</span><span class="ss">:phoenix_fallback</span><span class="p">)</span>
+      <span class="o">|&gt;</span> <span class="n">build_fallback</span><span class="p">()</span>
+
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">action:</span> <span class="mi">2</span><span class="p">]</span>
+      <span class="k">def</span> <span class="n">action</span><span class="p">(</span><span class="n">var!</span><span class="p">(</span><span class="n">conn_before</span><span class="p">),</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+        <span class="k">try</span> <span class="k">do</span>
+          <span class="n">var!</span><span class="p">(</span><span class="n">conn_after</span><span class="p">)</span> <span class="o">=</span> <span class="kn">super</span><span class="p">(</span><span class="n">var!</span><span class="p">(</span><span class="n">conn_before</span><span class="p">),</span> <span class="n">opts</span><span class="p">)</span>
+          <span class="kn">unquote</span><span class="p">(</span><span class="n">fallback_ast</span><span class="p">)</span>
+        <span class="k">catch</span>
+          <span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span> <span class="o">-&gt;</span>
+            <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span><span class="o">.</span><span class="no">Pipeline</span><span class="o">.</span><span class="n">__catch__</span><span class="p">(</span>
+              <span class="n">var!</span><span class="p">(</span><span class="n">conn_before</span><span class="p">),</span> <span class="n">reason</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">,</span>
+              <span class="n">var!</span><span class="p">(</span><span class="n">conn_before</span><span class="p">)</span><span class="o">.</span><span class="n">private</span><span class="o">.</span><span class="n">phoenix_action</span><span class="p">,</span> <span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">()</span>
+            <span class="p">)</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+
+      <span class="k">defp</span> <span class="n">phoenix_controller_pipeline</span><span class="p">(</span><span class="kn">unquote</span><span class="p">(</span><span class="n">conn</span><span class="p">),</span> <span class="n">var!</span><span class="p">(</span><span class="n">action</span><span class="p">))</span> <span class="k">do</span>
+        <span class="n">var!</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span> <span class="o">=</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="n">var!</span><span class="p">(</span><span class="n">controller</span><span class="p">)</span> <span class="o">=</span> <span class="bp">__MODULE__</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="n">var!</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="n">var!</span><span class="p">(</span><span class="n">controller</span><span class="p">)</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="n">var!</span><span class="p">(</span><span class="n">action</span><span class="p">)</span>
+
+        <span class="kn">unquote</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+</pre></div></div>
+
+<p><code>plugs  = [action|Module.get_attribute(env.module, :plugs)]</code> によって、各種 <code>plug</code> を実行した後に <code>action/2</code> を呼び出すように設定している。<br>
+これは最終的に <code>unquote(body)</code> によって、各種 <code>plug</code> の呼び出しと <code>action/2</code> の呼び出しが行われる。</p>
+
+<p>この呼び出しで、<code>__before_compile__/1</code> で定義された <code>action/2</code> 関数が呼ばれ、<code>super(var!(conn_before), opts)</code> によって、<code>__using__/1</code> で定義された <code>action/2</code> 関数が呼ばれることになる。<br>
+<code>__using__/1</code> で定義された <code>action/2</code> 関数で <code>apply(__MODULE__, action, [conn, conn.params])</code> と呼び出しているため、これによって無事 <code>HelloWorld.PageController.index/2</code> が呼ばれることになる。</p>
+
+<p>つまり <code>HelloWorld.PageController</code> は、必要な部分を抜き出して展開されると大体以下の様になる。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="c1"># Phoenix.Controller.__using__/1</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">opts</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_atom</span><span class="p">(</span><span class="n">action</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">update_in</span> <span class="n">conn</span><span class="o">.</span><span class="n">private</span><span class="p">,</span>
+             <span class="o">&amp;</span><span class="p">(</span><span class="nv">&amp;1</span> <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:phoenix_controller</span><span class="p">,</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+                  <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:phoenix_action</span><span class="p">,</span> <span class="n">action</span><span class="p">))</span>
+
+    <span class="n">phoenix_controller_pipeline</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">action</span><span class="p">(%</span><span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="p">{</span><span class="ss">private:</span> <span class="p">%{</span><span class="ss">phoenix_action:</span> <span class="n">action</span><span class="p">}}</span> <span class="o">=</span> <span class="n">conn</span><span class="p">,</span> <span class="n">_options</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">apply</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="p">[</span><span class="n">conn</span><span class="p">,</span> <span class="n">conn</span><span class="o">.</span><span class="n">params</span><span class="p">])</span>
+  <span class="k">end</span>
+
+  <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">init:</span> <span class="mi">1</span><span class="p">,</span> <span class="ss">call:</span> <span class="mi">2</span><span class="p">,</span> <span class="ss">action:</span> <span class="mi">2</span><span class="p">]</span>
+
+  <span class="c1"># HelloWorld.PageController</span>
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">render</span> <span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span>
+  <span class="k">end</span>
+
+  <span class="c1"># Phoenix.Controller.__before_compile__/1</span>
+  <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">action:</span> <span class="mi">2</span><span class="p">]</span>
+
+  <span class="k">def</span> <span class="n">action</span><span class="p">(</span><span class="n">conn_before</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">try</span> <span class="k">do</span>
+      <span class="n">conn_after</span> <span class="o">=</span> <span class="kn">super</span><span class="p">(</span><span class="n">conn_before</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+      <span class="c1"># ここにaction_fallbackの処理が入る</span>
+      <span class="n">conn_after</span>
+    <span class="k">catch</span>
+      <span class="o">...</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">phoenix_controller_pipeline</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">controller</span> <span class="o">=</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span>
+    <span class="c1"># ここに各種plugの処理が入る</span>
+    <span class="n">action</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">[])</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<ol>
+<li><code>call/2</code></li>
+<li><code>phoenix_controller_pipeline/2</code></li>
+<li>
+<code>__before_compile__/1</code> 側の <code>action/2</code>
+</li>
+<li>
+<code>__using__/1</code> 側の <code>action/2</code>
+</li>
+<li><code>index/2</code></li>
+</ol>
+
+<p>と呼ばれることが分かる。</p>
+
+<h2>
+<span id="action2-のオーバーライド" class="fragment"></span><a href="#action2-%E3%81%AE%E3%82%AA%E3%83%BC%E3%83%90%E3%83%BC%E3%83%A9%E3%82%A4%E3%83%89"><i class="fa fa-link"></i></a><code>action/2</code> のオーバーライド</h2>
+
+<p><code>action/2</code> はオーバーライド可能である。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="p">,</span> <span class="ss">:controller</span>
+
+  <span class="k">def</span> <span class="n">action</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"overridden action/2"</span>
+    <span class="kn">super</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">render</span> <span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>こうした時、呼び出される順序は以下のようになる。</p>
+
+<ol>
+<li><code>call/2</code></li>
+<li><code>phoenix_controller_pipeline/2</code></li>
+<li>
+<code>__before_compile__/1</code> 側の <code>action/2</code>
+</li>
+<li>
+<code>HelloWorld.PageController</code> で定義した <code>action/2</code>
+</li>
+<li>
+<code>__using__/1</code> 側の <code>action/2</code>
+</li>
+<li><code>index/2</code></li>
+</ol>
+
+<p>このように、「<code>__before_compile__/1</code> 側の <code>action/2</code>」と「<code>__using__/1</code> 側の <code>action/2</code>」の間で呼ばれることになる。</p>
+
+<p>これは <code>defmodule</code> の一番下に <code>__before_compile__/1</code> の内容が展開されるため、「<code>__before_compile__/1</code> 側の <code>action/2</code>」が 「<code>HelloWorld.PageController</code> で定義した <code>action/2</code>」よりも後に定義されることになるからである。</p>
+
+<p>つまり、ここでやっている <code>action/2</code> のオーバーライドというのは、「<code>__using__/1</code> 側の <code>action/2</code>」のオーバーライドだということを覚えておいたほうが良い。</p>
+
+<p>また、外から <code>HelloWorld.PageController.action/2</code> を呼び出した場合、「<code>__before_compile__/1</code> 側の <code>action/2</code>」が呼び出されるということも覚えておいた方が良い。</p>
+
+<p>もし「<code>__before_compile__/1</code> 側の <code>action/2</code>」をオーバーライドしたい場合には、以下の様に定義すれば良さそうだ。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span><span class="o">.</span><span class="no">Action</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">__before_compile__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">action:</span> <span class="mi">2</span><span class="p">]</span>
+      <span class="k">def</span> <span class="n">action</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+        <span class="c1"># 好きなように書く</span>
+        <span class="o">...</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="p">,</span> <span class="ss">:controller</span>
+  <span class="c1"># use より後に書くこと</span>
+  <span class="nv">@before_compile</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span><span class="o">.</span><span class="no">Action</span>
+
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">render</span> <span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h2>
+<span id="plug" class="fragment"></span><a href="#plug"><i class="fa fa-link"></i></a>plug</h2>
+
+<p>v1.3.0 以降では、コントローラの <code>plug/2</code> には、ガード条件を付けることができる。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>
+<span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="c1"># Phoenix のドキュメントから引用</span>
+  <span class="n">plug</span> <span class="ss">:authenticate</span><span class="p">,</span> <span class="p">[</span><span class="ss">usernames:</span> <span class="p">[</span><span class="s2">"jose"</span><span class="p">,</span> <span class="s2">"eric"</span><span class="p">,</span> <span class="s2">"sonny"</span><span class="p">]]</span> <span class="ow">when</span> <span class="n">action</span> <span class="ow">in</span> <span class="p">[</span><span class="ss">:show</span><span class="p">,</span> <span class="ss">:edit</span><span class="p">]</span>
+  <span class="n">plug</span> <span class="ss">:authenticate</span><span class="p">,</span> <span class="p">[</span><span class="ss">usernames:</span> <span class="p">[</span><span class="s2">"admin"</span><span class="p">]]</span> <span class="ow">when</span> <span class="ow">not</span> <span class="n">action</span> <span class="ow">in</span> <span class="p">[</span><span class="ss">:index</span><span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>ガードの中では <code>conn</code>, <code>controller</code>, <code>action</code> の変数が利用可能で、<code>controller</code> には <code>HelloWorld.PageController</code> といったコントローラのモジュール名が、<code>action</code> には <code>:index</code> や <code>:edit</code> といったアクション名が入っている。</p>
+
+<p>今のところ、ガード条件が使えるのはコントローラの <code>plug/2</code> だけであり、エンドポイントの <code>plug/2</code> とルータの <code>plug/2</code> では使えない。</p>
+
+<h2>
+<span id="action_fallback" class="fragment"></span><a href="#action_fallback"><i class="fa fa-link"></i></a>action_fallback</h2>
+
+<p>v1.3.0 以降では、<code>with</code> と組み合わせてうまくコントローラを書けるようになっている。</p>
+
+<p>通常、コントローラの戻り値は <code>%Plug.Conn{}</code> にする必要があるが、実はそれ以外を返しても構わないようになっている。<br>
+もし <code>%Plug.Conn{}</code> 以外を返した場合、<code>Phoenix.Controller.action_fallback/1</code> で指定した関数やモジュールが呼ばれることになる。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># Phoenixドキュメントから引用</span>
+
+<span class="k">defmodule</span> <span class="no">MyController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+  <span class="n">action_fallback</span> <span class="no">MyFallbackController</span>
+
+  <span class="k">def</span> <span class="n">show</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">%{</span><span class="s2">"id"</span> <span class="o">=&gt;</span> <span class="n">id</span><span class="p">},</span> <span class="n">current_user</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">with</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">post</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="no">Blog</span><span class="o">.</span><span class="n">fetch_post</span><span class="p">(</span><span class="n">post</span><span class="p">),</span>
+         <span class="ss">:ok</span> <span class="o">&lt;-</span> <span class="no">Authorizer</span><span class="o">.</span><span class="n">authorize</span><span class="p">(</span><span class="n">current_user</span><span class="p">,</span> <span class="ss">:view</span><span class="p">,</span> <span class="n">post</span><span class="p">)</span> <span class="k">do</span>
+
+      <span class="n">render</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="s2">"show.json"</span><span class="p">,</span> <span class="ss">post:</span> <span class="n">post</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">MyFallbackController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="ss">:not_found</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">conn</span>
+    <span class="o">|&gt;</span> <span class="n">put_status</span><span class="p">(</span><span class="ss">:not_found</span><span class="p">)</span>
+    <span class="o">|&gt;</span> <span class="n">render</span><span class="p">(</span><span class="no">MyErrorView</span><span class="p">,</span> <span class="ss">:"404"</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="ss">:unauthorized</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">conn</span>
+    <span class="o">|&gt;</span> <span class="n">put_status</span><span class="p">(</span><span class="mi">403</span><span class="p">)</span>
+    <span class="o">|&gt;</span> <span class="n">render</span><span class="p">(</span><span class="no">MyErrorView</span><span class="p">,</span> <span class="ss">:"403"</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>

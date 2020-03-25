@@ -1,0 +1,6 @@
+<blockquote>
+<p>こうなってくると、一体erlangモジュールの、どの関数が自動インポートBIFで、どの関数が自動インポートBIFでないのかが気になってきます。<br>
+しかしドキュメントを探しても、その一覧というのが見つかりませんでした。</p>
+</blockquote>
+
+<p>一覧ではないですが <a href="http://erlang.org/doc/man/erlang.html" class="autolink" rel="nofollow noopener" target="_blank">http://erlang.org/doc/man/erlang.html</a> の冒頭には「Auto-imported BIFs are listed without module prefix. BIFs listed with module prefix are not auto-imported.」との記載があり、<code>byte_size(Bitstring) -&gt; integer() &gt;= 0</code>のように接頭辞無しで表記されている関数は自動インポートで、<code>erlang:cancel_timer(TimerRef) -&gt; Result</code>のように<code>erlang:</code>接頭辞がつくものはそうではない、とマニュアル上から判別することは一応可能となっていたりします。</p>

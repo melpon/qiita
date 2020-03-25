@@ -1,0 +1,227 @@
+<p>この数ヶ月間は、社内で利用するための Elixir の Webフレームワークを作るのに注力していて、今も開発を続けています。<br>
+その開発で、Elixir の開発環境やルールをどうしているのかについて書きます。</p>
+
+<h1>
+<span id="開発環境について" class="fragment"></span><a href="#%E9%96%8B%E7%99%BA%E7%92%B0%E5%A2%83%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>開発環境について</h1>
+
+<p>開発環境は、各人でバージョン揃えるのが大変という問題があります。<br>
+例えば以下のアプリケーションのバージョンを考慮する必要があります。</p>
+
+<ul>
+<li>Erlang のバージョン</li>
+<li>Elixir のバージョン</li>
+<li>NodeJS のバージョン</li>
+<li>MySQL のバージョン</li>
+<li>Redis のバージョン</li>
+</ul>
+
+<p>これらを、新しい人が入る度に指定したバージョンでインストールしてもらうのも大変だし、全員でバージョンを揃えるのも大変です。<br>
+また、開発中も統一してバージョンを上げていきたいし、そのバージョンは出来る限り最新にしたいところです。</p>
+
+<p>ローカル環境でこれをやり続けるのはかなり大変なので、Docker と Docker Compose を使うことにしました。</p>
+
+<p>Erlang や Elixir 等の特定のバージョンを入れた Docker イメージを作り、それを全員に使ってもらうようにします。<br>
+MySQL や DynamoDB、Redis といった DB も全部 Docker で動かします。</p>
+
+<p>こうすることで、各開発者はローカルに Docker と Docker Compose を入れるだけで良くなります。開発にあたって Elixir や MySQL 等をインストールする必要はありません。<br>
+あとは <code>docker-compose</code> 経由で実行すれば、指定したバージョンの MySQL や Redis 等の Docker イメージが無ければ勝手にダウンロードし、それらを起動してくれます。</p>
+
+<p>また、<code>docker-compose.yml</code> で指定するイメージのタグ名には、必ずバージョンを含めるようにします。<br>
+新しいバージョンの Erlang や Elixir がリリースされたら、それを含んだ Docker イメージを作り、タグ名を変えて push し、<code>docker-compose.yml</code> のタグ名を新しいものに書き換えるだけです。<br>
+これで、開発者全員に新しいイメージが自動的に落ちてくるようになります。</p>
+
+<p>こうすることで、誰か一人がアップデートの作業をすれば全員が新しい環境になります。そのため各アプリケーションの更新を素早く行えるようになります。<br>
+例えば <a href="https://github.com/elixir-lang/elixir/releases/tag/v1.5.3" rel="nofollow noopener" target="_blank">Elixir 1.5.3</a> は 2017年12月20日にリリースされましたが、2日後の2017年12月22日に全員の開発環境が Elixir 1.5.3 になりました。<br>
+このように、Docker と Docker Compose を使うことで、チーム全体の開発環境をかなり早く、楽に更新できるようになりました。</p>
+
+<h3>
+<span id="latest-タグ" class="fragment"></span><a href="#latest-%E3%82%BF%E3%82%B0"><i class="fa fa-link"></i></a>latest タグ</h3>
+
+<p>Docker イメージの <code>latest</code> タグは使わない方針です。<br>
+同じバージョンで統一するために使っているのに、イメージを pull してきた時期によって利用するバージョンが異なるのは目的に反するためです。</p>
+
+<h3>
+<span id="makefile" class="fragment"></span><a href="#makefile"><i class="fa fa-link"></i></a>Makefile</h3>
+
+<p><code>docker-compose</code> コマンドを毎回書くのは面倒なので、やりたいことは全部 Makefile で実行するようにしています。<br>
+例えば <code>make test</code> を打つと <code>docker-compose run --rm servicename mix test</code> が実行されるようにしています。</p>
+
+<p>正確には、依存してる MySQL や Redis がちゃんと起動するまで待つ必要があるので、Docker イメージの中に <a href="https://github.com/jwilder/dockerize" rel="nofollow noopener" target="_blank">Dockerize</a> を入れておき、ポートが開いていることを確認してから <code>mix test</code> を実行するとかもしているため、実際のコマンドはもっと長いです。</p>
+
+<h3>
+<span id="その他のマイクロサービス" class="fragment"></span><a href="#%E3%81%9D%E3%81%AE%E4%BB%96%E3%81%AE%E3%83%9E%E3%82%A4%E3%82%AF%E3%83%AD%E3%82%B5%E3%83%BC%E3%83%93%E3%82%B9"><i class="fa fa-link"></i></a>その他のマイクロサービス</h3>
+
+<p>社内で利用するゲーム用の認証サーバや課金サーバといったマイクロサービスも Docker イメージで提供していて、<code>make test</code> 時にこれらのイメージも一緒に起動するようにしています。</p>
+
+<p>これによって、ローカルで気軽に本番と同等の認証や課金が試せるようになっています。</p>
+
+<h3>
+<span id="コンテナ起動しすぎじゃない" class="fragment"></span><a href="#%E3%82%B3%E3%83%B3%E3%83%86%E3%83%8A%E8%B5%B7%E5%8B%95%E3%81%97%E3%81%99%E3%81%8E%E3%81%98%E3%82%83%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>コンテナ起動しすぎじゃない？</h3>
+
+<p>現在、この Web フレームワークを利用して <code>make test</code> を打つと <strong>12個</strong> のコンテナが起動するようになっています。<br>
+正直起動しすぎだと思うのですが、今のところは特に問題なく管理できています。</p>
+
+<p>各マイクロサービスは、依存ライブラリのバージョンを上げるために結構更新してますが、バージョン上げて Docker イメージを作って push して <code>docker-compose.yml</code> を書き換えるだけなので、そんなに手間では無いです。</p>
+
+<p>また、コンテナの起動と終了には時間が掛かりますが、一度起動したら起動しっ放しにしているので、初回の実行以外はそんなに時間が掛かったりしません。</p>
+
+<h3>
+<span id="mac-で遅い問題" class="fragment"></span><a href="#mac-%E3%81%A7%E9%81%85%E3%81%84%E5%95%8F%E9%A1%8C"><i class="fa fa-link"></i></a>Mac で遅い問題</h3>
+
+<p><a href="https://docs.docker.com/docker-for-mac/osxfs/#performance-issues-solutions-and-roadmap" rel="nofollow noopener" target="_blank">Performance issues, solutions, and roadmap</a> に書いてあるように、Docker で osxfs のディレクトリをマウントすると、めちゃめちゃ遅くなります。<br>
+ただ、以下の理由があり、しばらくは我慢して遅いままやってました。</p>
+
+<ul>
+<li>
+<a href="https://docs.docker.com/docker-for-mac/osxfs-caching/" rel="nofollow noopener" target="_blank">Performance tuning for volume mounts (shared filesystems)</a> に書いてるある <code>delegated</code> が実装されればマシになるはず</li>
+<li>他のツールを入れて解決するのは、環境構築の手間が増えるので可能な限り避けたい</li>
+</ul>
+
+<p>しかし、<code>delegated</code> はドキュメントに仕様だけ書かれて、中身が一向に実装される気配が無いので、仕方なく <a href="http://docker-sync.io/" rel="nofollow noopener" target="_blank">docker-sync</a> を使うことにしました。</p>
+
+<p>以下のような問題が起きたりしましが、今のところ何とかやっていけています。</p>
+
+<ul>
+<li>ローカル上で消した後、コンテナ上に反映される前にコマンドを実行してしまって、変な動きになってしまった</li>
+<li>ローカル上とコンテナ上で同じファイルを操作してしまい、コンフリクトが起きた</li>
+<li>同期するファイル（≒監視するファイル）が増えすぎて CPU を使いまくってしまった</li>
+<li>
+<code>docker-sync.yml</code> の同期しないファイルの一覧を編集したら、必要なファイルまで同期しなくなってしまった</li>
+<li>コンテナ上からローカル上に同期しなかったファイルの状態を確認するために手間が掛かるようになってしまった</li>
+</ul>
+
+<p>ひとまず、docker-sync はいつでも外せるようにしたいので、docker-sync が無くても動作するようにしました。<br>
+あとは早く <code>delegated</code> が実装されるのを祈るだけです。</p>
+
+<h3>
+<span id="20181011-追記諦めた" class="fragment"></span><a href="#20181011-%E8%BF%BD%E8%A8%98%E8%AB%A6%E3%82%81%E3%81%9F"><i class="fa fa-link"></i></a>（2018/10/11 追記）諦めた</h3>
+
+<p>いつまで経ってもまともにならないので、諦めてチーム全体で <a href="https://github.com/asdf-vm/asdf" rel="nofollow noopener" target="_blank">asdf</a> を使うようにしました。<br>
+ただし、各マイクロサービスは変わらず Docker で提供するので、Docker も必要になります。</p>
+
+<p>インストール手順が増えるのと環境依存の問題が発生する確率が上がるのが難点ですが、かなり高速になったので割と快適になりました。</p>
+
+<h3>
+<span id="マルチプラットフォーム" class="fragment"></span><a href="#%E3%83%9E%E3%83%AB%E3%83%81%E3%83%97%E3%83%A9%E3%83%83%E3%83%88%E3%83%95%E3%82%A9%E3%83%BC%E3%83%A0"><i class="fa fa-link"></i></a>マルチプラットフォーム</h3>
+
+<p>Docker を導入した時は特に考えてなかったのですが、どうやら Windows でも動くようです。<br>
+Makefile があるので Windows Subsystem for Linux を入れる必要はあるみたいですけど、Windows でも割と簡単に導入できるならかなり良い感じです。</p>
+
+<h1>
+<span id="ルールについて" class="fragment"></span><a href="#%E3%83%AB%E3%83%BC%E3%83%AB%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>ルールについて</h1>
+
+<p>多人数<sup id="fnref1"><a href="#fn1" rel="footnote" title="2〜5人ぐらい。1人ではないという程度の意味です。">1</a></sup>で開発しているので、いくつかルールを決めています。<br>
+基本的には「開発者を信用する」というスタンスです。</p>
+
+<p>悪いことをする前提でルールを考えるとか地獄すぎるし、そのようなルールが守られる気もしないし、守らせるのも難しいでしょう。</p>
+
+<h3>
+<span id="コーディングルール" class="fragment"></span><a href="#%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E3%83%AB%E3%83%BC%E3%83%AB"><i class="fa fa-link"></i></a>コーディングルール</h3>
+
+<p>コーディングルールは、ほぼ口伝＆既存のコードの空気を読め＆レビューで指摘、という状態なので、どこかでルールを纏めたいと思っています。</p>
+
+<ul>
+<li><a href="https://qiita.com/melpon/items/4f196f2c9a363c057053" id="reference-388c397fb48bedb8f7d9">Elixirのマクロは何が良くないのか</a></li>
+<li><a href="https://qiita.com/melpon/items/14db2b1b738f53207dd0" id="reference-cac30f7531b24a71ff37">import する時には必ず only を指定しよう</a></li>
+<li><a href="https://qiita.com/melpon/items/37d430f0551e62ae035c" id="reference-664d92b3f275fa47f45c">Elixir 1.5 で追加された @impl を活用しよう</a></li>
+<li><a href="https://qiita.com/melpon/items/6938f3d7fda3fc8dbee6" id="reference-410fde5cb26e6189ae8e">prod.secret.exs より env を使おう</a></li>
+<li><a href="https://qiita.com/melpon/items/be98d4c3424f25de6d62" id="reference-cdee6d701f9f439f32b1">config.exs の書き方</a></li>
+</ul>
+
+<p>ひとまず、このあたりを読むように言っておけば良さそうかなと思ってます。</p>
+
+<p>インデントや空白といった、書き方のスタイルに関しては、<strong>今はしない</strong> という方針です。<br>
+Elixir 1.6 でフォーマッタが入るので、それが入ったら、基本的にはそれに合わせるだけでいいだろう、という感じでやっています。<br>
+まあフォーマッタを入れてなくても、開発者はみんな空気が読める人ばっかりなので、そこそこスタイルが揃ってます。</p>
+
+<h3>
+<span id="lint" class="fragment"></span><a href="#lint"><i class="fa fa-link"></i></a>Lint</h3>
+
+<p>コードレビューはとても時間が掛かるので、可能な限り楽をするために各種 Lint を使っています。</p>
+
+<p>まず、警告が出た時点でエラーとして扱う <code>warnings_as_errors: true</code> を入れて、警告を無視できないようにしています。</p>
+
+<p>また、<a href="https://github.com/rrrene/credo" rel="nofollow noopener" target="_blank">credo</a> を使って問題のありそうなコードを検出しています。<br>
+基本的にはデフォルトの設定でやっていますが、TODO や FIXME の警告に関しては除けています。</p>
+
+<p>TODO や FIXME は、それが必要だと思ったから書いているので、credo に警告されても直しようがありません。<br>
+そのため credo の警告を無視する習慣が付くか、あるいは TODO や FIXME の記述を避けるようになってしまいます。<br>
+なので、TODO や FIXME に関しては警告を出さないようにしています。</p>
+
+<p>Dialyzer は、遅すぎるので使うのをやめました。<br>
+CI で実行する時にチェックすればいいやという方針にしました。</p>
+
+<p>ただ、CI 環境はまだ作れていません。早く作りたい…。</p>
+
+<h3>
+<span id="テスト" class="fragment"></span><a href="#%E3%83%86%E3%82%B9%E3%83%88"><i class="fa fa-link"></i></a>テスト</h3>
+
+<p>テストは「自分が書いたコードが正しく動くかどうか不安になってるのを解消する」という目的で書きます。<br>
+コードの品質が、とかカバレッジが、とかはあまり考えなくていいやという方針です（カバレッジを取らないという意味ではないです）。</p>
+
+<p>不安を解消するためなので、そのために必要だと思えば <a href="https://qiita.com/melpon/items/5c61c7d7ceeb8813a0a7" id="reference-e100d6e8d58bac1a3543">Elixir で private な関数をテストする</a> で書いた方法を使って private な関数もテストします。</p>
+
+<h3>
+<span id="プルリクエスト" class="fragment"></span><a href="#%E3%83%97%E3%83%AB%E3%83%AA%E3%82%AF%E3%82%A8%E3%82%B9%E3%83%88"><i class="fa fa-link"></i></a>プルリクエスト</h3>
+
+<p>開発した機能は、プルリクエストを出してもらってレビューを行います。</p>
+
+<p>プルリクエストを出す時には、結構詳しく書いてもらうようにしています。<br>
+「その機能を書いた人が世界で一番そのコードについて詳しいんだから、レビューして欲しいなら一番詳しいお前が説明を書け」という方針です。<br>
+なのでレビューする際には、コードの意図や説明が分からないなら、コードから意図を頑張ってエスパーするのではなく「分からない」と伝えるようにしています。</p>
+
+<p>また、プルリクエストのコメントだけでコミュニケーションを頑張ったりしない方針です。<br>
+開発者同士の席は近くにあるので、書いた人の横に行って「これよく分からないんだけど」と言って説明して貰う方が20倍ぐらい早いです。<br>
+なので、レビューしてる人数が5人ぐらいまでだったら、一人ひとりに説明していっても十分に早くなるでしょう。</p>
+
+<p>プルリクエストのマージについては、「プルリクエストを出した人がマージする」「いつでもマージしても構わない」 という方針です。<br>
+レビューを受けて、自分のコードが問題無さそうだと思った時点でマージしてもいいし、急ぎでそれが必要なら誰にもレビューを受けてない状態でマージしても構いません。</p>
+
+<p>危険そうなルールに見えますが、普通に考えて、動くかどうか不安に思ってるコードを勝手にマージなんてしないし、すぐにマージしたいけど動くか不安なら直接レビュワーに今すぐレビューをやって欲しいってお願いしに行くし、レビュワーもそうなったらよっぽどのことが無い限り断ったりしないでしょう。</p>
+
+<h1>
+<span id="リリース" class="fragment"></span><a href="#%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9"><i class="fa fa-link"></i></a>リリース</h1>
+
+<p>書いてるWebフレームワークは、アプリ開発をする各部署で使われるので、開発中のものを使ってもらうのではなく、確実に「リリース」という単位で区切って、それを使ってもらうようにしています。</p>
+
+<p>その際に CHANGELOG を書いて、どんな機能が追加されたり変更されたのかを各部署に伝えるようにしています。</p>
+
+<p>最低でも月に一度、依存ライブラリや Elixir 本体のバージョン更新のためにアップデートしていく方針でやっています。<br>
+（今はゴリゴリ書いてるので機能も追加されていってますが）。</p>
+
+<p>これは、今まで自分達が何をしてきたのかもすぐに分かるし、成果として報告もしやすいので、そういう意味でも結構役立っています。</p>
+
+<p>また、<a href="https://qiita.com/melpon/items/d61907ae51307a55c39a" id="reference-ede1bd4dcc40a857951f">Elixir アプリケーションをパッケージ化しよう</a> で書いたように、アプリケーションをデプロイする時にはパッケージ化をしています。</p>
+
+<p>パッケージ化したら、そのファイルを S3 にアップロードし、CodeDeploy を使っていい感じにデプロイをする予定です。</p>
+
+<h1>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h1>
+
+<p>Elixir を複数人で開発するということで、新しく環境やルールを整備していきました。<br>
+今は一応回っているように見えるので、今後も、よりうまく回るように環境周りを整備していければと思います。</p>
+
+<h1>
+<span id="完走した感想" class="fragment"></span><a href="#%E5%AE%8C%E8%B5%B0%E3%81%97%E3%81%9F%E6%84%9F%E6%83%B3"><i class="fa fa-link"></i></a>完走した感想</h1>
+
+<p><a href="https://qiita.com/advent-calendar/2017/elixir-solo">Elixir 一人 Advent Calendar 2017</a> を無事 25 日埋められました。<br>
+Elixir の日本語の情報を結構出せたんじゃないかなと思います。</p>
+
+<p>また、記事を書くためにいろいろ調べたり、ネタを見つけるために Elixir のコードや issue やコミットログを見たりしてたこともあり、個人的にも大分勉強になりました。<br>
+自分はアウトプット駆動学習が向いているようです。</p>
+
+<p>今回の Elixir 一人 Advent Calendar 2017 の記事は、11 月ぐらいからちょっとずつ記事を書いていました。<br>
+なので <a href="https://qiita.com/advent-calendar/2016/erlang-solo">去年</a> に比べれば大分書けたんじゃないかなと思います。</p>
+
+<p>一人 Advent Calendar、1, 2ヶ月間、遊ぶ時間が大量に減ってしまうことを除けばオススメです。みんなやりましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>2〜5人ぐらい。1人ではないという程度の意味です。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,194 @@
+<p><a href="http://phoenixframework.org/" rel="nofollow noopener" target="_blank">Phoenix Framework</a> を使って Web API や Web サイトを作る時、よく使うページやロジックを再利用可能な形で提供したいことがあります。<br>
+ここで言う再利用可能というのは、deps にアプリケーションを追加すると利用可能になるということを指します。<br>
+つまり、認証画面を表示したり、Admin サイトを表示したり、特定サービスの課金処理を行う API を提供したりといったことが、deps に追加していくつか設定するだけで動作して欲しいのです。<sup id="fnref1"><a href="#fn1" rel="footnote" title="Django で言う django.contrib.auth とか django.contrib.admin あたりを想定しています。">1</a></sup></p>
+
+<p>Phoenix でアプリケーションを作る場合は、それ単体で動作すること前提になっているので、いくつか弄ってあげる必要があります。<br>
+ここでは、どのようにすれば再利用可能になるのかを説明します。</p>
+
+<h2>
+<span id="エンドポイントを削除する" class="fragment"></span><a href="#%E3%82%A8%E3%83%B3%E3%83%89%E3%83%9D%E3%82%A4%E3%83%B3%E3%83%88%E3%82%92%E5%89%8A%E9%99%A4%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>エンドポイントを削除する</h2>
+
+<p>Phoenix で再利用しにくい一番の理由は、それがアプリケーションとして起動し、指定したポートを Listen し始めるからです。<br>
+なのでそこを除ければ、かなり再利用可能に近づきます。</p>
+
+<p>そのために、まずアプリケーションとして起動するのを止めます。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">mix.exs</span></div>
+<div class="highlight"><pre>  <span class="k">def</span> <span class="n">application</span> <span class="k">do</span>
+    <span class="p">[</span>
+      <span class="c1">#この行を削除</span>
+      <span class="c1">#mod: {MyApp.Application, []},</span>
+      <span class="ss">extra_applications:</span> <span class="p">[</span><span class="ss">:logger</span><span class="p">,</span> <span class="ss">:runtime_tools</span><span class="p">]</span>
+    <span class="p">]</span>
+  <span class="k">end</span>
+</pre></div>
+</div>
+
+<p>これによって <code>lib/my_app/application.ex</code> が不要になるので削除します。</p>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre><span class="nb">rm </span>lib/my_app/application.ex
+</pre></div></div>
+
+<p><code>MyApp.Application</code> では Repo の起動とエンドポイントの起動を行っていました。<br>
+これらの起動は依存先のアプリケーションに任せて、ここでは何も行わないようにしましょう。</p>
+
+<p>Repo とエンドポイントを起動しないようにしたので、それらのモジュールも不要になります。削除しましょう。</p>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre><span class="nb">rm </span>lib/my_app/repo.ex
+<span class="nb">rm </span>lib/my_app_web/endpoint.ex
+</pre></div></div>
+
+<p>なお、エンドポイントだけでなく Repo も削除する理由は、Repo をアプリケーション内で直接指定すると、別アプリケーションから再利用できなくなってしまうからです。</p>
+
+<p>これで、<code>:my_app</code> は自分で起動することは無く、別のアプリケーションから呼ばれるだけの存在になりました。<br>
+<code>:my_app</code> のコントローラを利用するなら、このライブラリを利用するアプリケーションのルータから <code>MyApp.Router</code> に forward するだけです。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/other_app_web/router.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">OtherAppWeb</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">OtherAppWeb</span><span class="p">,</span> <span class="ss">:router</span>
+
+  <span class="o">...</span>
+
+  <span class="c1"># /my_app 以下の URL は全部 MyAppWeb.Router に処理してもらう</span>
+  <span class="n">forward</span> <span class="s2">"/my_app"</span><span class="p">,</span> <span class="no">MyAppWeb</span><span class="o">.</span><span class="no">Router</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<h2>
+<span id="スキーマは-yacto-を利用する" class="fragment"></span><a href="#%E3%82%B9%E3%82%AD%E3%83%BC%E3%83%9E%E3%81%AF-yacto-%E3%82%92%E5%88%A9%E7%94%A8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>スキーマは Yacto を利用する</h2>
+
+<p>スキーマとマイグレーションに関しては、Ecto は再利用をあまり考えてくれていないので、<a href="https://qiita.com/melpon/items/5c9b0645d5240cd22d0f" id="reference-9a212200fada6c4472ff">Yacto</a> を使いましょう。</p>
+
+<p>これによって、このライブラリで Repo を直接触る必要が無くなります。<br>
+Repo を定義したり、プロセスを起動したりするのは、このライブラリを利用するアプリケーション側がやるべきことです。</p>
+
+<p>こうすることで、このライブラリを利用するアプリケーションでは、設定ファイルを適切に書いた上で Yacto のマイグレーションを実行するだけです。</p>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre>mix yacto.migrate <span class="nt">--app</span> my_app
+</pre></div></div>
+
+<p>Yacto を使えば、複数の依存先アプリケーションのスキーマを全て同じデータベースに入れて利用可能です。</p>
+
+<h2>
+<span id="テストを考慮する" class="fragment"></span><a href="#%E3%83%86%E3%82%B9%E3%83%88%E3%82%92%E8%80%83%E6%85%AE%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>テストを考慮する</h2>
+
+<p>このライブラリをテストする時、モジュール単体でテストするのは可能ですが、可能であればサーバとして起動してテストしたいところです。<br>
+そのためには、テスト時のみアプリケーションとして起動するように設定しておきます。<br>
+今まで消したファイルを <code>test/support/</code> の下に復活させてモジュール名を変えるだけです。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">mix.exs</span></div>
+<div class="highlight"><pre>  <span class="k">def</span> <span class="n">application</span> <span class="k">do</span>
+    <span class="n">mod</span> <span class="o">=</span>
+      <span class="k">case</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span><span class="p">()</span> <span class="k">do</span>
+        <span class="c1"># テスト時のみアプリケーションとして起動する</span>
+        <span class="ss">:test</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="ss">mod:</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Application</span><span class="p">,</span> <span class="p">[]}]</span>
+        <span class="n">_</span> <span class="o">-&gt;</span> <span class="p">[]</span>
+      <span class="k">end</span>
+    <span class="n">mod</span> <span class="o">++</span> <span class="p">[</span>
+      <span class="ss">extra_applications:</span> <span class="p">[</span><span class="ss">:logger</span><span class="p">,</span> <span class="ss">:runtime_tools</span><span class="p">]</span>
+    <span class="p">]</span>
+  <span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/support/application.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">import</span> <span class="no">Supervisor</span><span class="o">.</span><span class="no">Spec</span>
+
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="n">supervisor</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span> <span class="p">[]),</span>
+      <span class="n">supervisor</span><span class="p">(</span><span class="no">MyAppWeb</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Endpoint</span><span class="p">,</span> <span class="p">[]),</span>
+    <span class="p">]</span>
+
+    <span class="n">opts</span> <span class="o">=</span> <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/support/repo.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Repo</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span> <span class="ss">otp_app:</span> <span class="ss">:my_app</span>
+
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:url</span><span class="p">,</span> <span class="no">System</span><span class="o">.</span><span class="n">get_env</span><span class="p">(</span><span class="s2">"DATABASE_URL"</span><span class="p">))}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/support/endpoint.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyAppWeb</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Endpoint</span> <span class="k">do</span>
+  <span class="o">...</span>
+
+  <span class="n">plug</span> <span class="no">MyAppWeb</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="o">...</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>テスト用のアプリケーション、テスト用のエンドポイント、テスト用の Repo を作っています。<br>
+これらのファイルはテスト時にしか利用せず、実際はこのライブラリを利用するアプリケーションが用意するものです。</p>
+
+<p>Repo やエンドポイントの名前を変更したので、<code>config/test.exs</code> の設定もそれに追従します。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">config/test.exs</span></div>
+<div class="highlight"><pre><span class="kn">use</span> <span class="no">Mix</span><span class="o">.</span><span class="no">Config</span>
+
+<span class="n">config</span> <span class="ss">:my_app</span><span class="p">,</span> <span class="no">MyAppWeb</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Endpoint</span><span class="p">,</span>
+  <span class="ss">http:</span> <span class="p">[</span><span class="ss">port:</span> <span class="mi">4001</span><span class="p">],</span>
+  <span class="ss">server:</span> <span class="no">true</span>
+
+<span class="n">config</span> <span class="ss">:my_app</span><span class="p">,</span>
+  <span class="ss">ecto_repos:</span> <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Repo</span><span class="p">]</span>
+
+<span class="n">config</span> <span class="ss">:my_app</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Test</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span>
+  <span class="ss">adapter:</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Postgres</span><span class="p">,</span>
+  <span class="ss">username:</span> <span class="s2">"postgres"</span><span class="p">,</span>
+  <span class="ss">password:</span> <span class="s2">"postgres"</span><span class="p">,</span>
+  <span class="ss">database:</span> <span class="s2">"my_app_test"</span><span class="p">,</span>
+  <span class="ss">hostname:</span> <span class="s2">"localhost"</span><span class="p">,</span>
+  <span class="ss">pool:</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">SQL</span><span class="o">.</span><span class="no">Sandbox</span>
+</pre></div>
+</div>
+
+<p>あと <code>MyApp.Repo</code> を使っている部分がいくつかあるので <code>MyApp.Test.Repo</code> を使うように変えておきましょう。<br>
+それが終われば、ちゃんとテスト時にサーバを起動してテストできるようになっているはずです。<sup id="fnref2"><a href="#fn2" rel="footnote" title="なお、Phoenix は実際にサーバを起動しなくてもエンドポイント経由で実行してテストすることは可能です。が、end-to-end のテストの方がより正確なので、自分はそちらを積極的に使うようにしています。">2</a></sup></p>
+
+<p>これでデータベース用のスキーマも無事利用可能です。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<ul>
+<li>エンドポイントあたりを消せば大体再利用可能になる</li>
+<li>スキーマに関しては Yacto を使おう</li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>Django で言う <a href="https://docs.djangoproject.com/en/1.11/ref/contrib/auth/" rel="nofollow noopener" target="_blank"><code>django.contrib.auth</code></a> とか <a href="https://docs.djangoproject.com/en/1.11/ref/contrib/admin/" rel="nofollow noopener" target="_blank"><code>django.contrib.admin</code></a> あたりを想定しています。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>なお、Phoenix は実際にサーバを起動しなくてもエンドポイント経由で実行してテストすることは可能です。が、end-to-end のテストの方がより正確なので、自分はそちらを積極的に使うようにしています。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

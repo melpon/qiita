@@ -1,0 +1,111 @@
+<p>Elixir で複雑なロジックを書いてると、一時的に代入したり書き換えたりしたくなることがあります。</p>
+
+<p>例えばこんなコードがあったとします。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">ys</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">for</span> <span class="n">x</span> <span class="o">&lt;-</span> <span class="n">xs</span> <span class="k">do</span>
+    <span class="n">for</span> <span class="n">y</span> <span class="o">&lt;-</span> <span class="n">ys</span> <span class="k">do</span>
+      <span class="k">if</span> <span class="n">writable?</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">write_to_db</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+  <span class="ss">:ok</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これは、「<code>xs</code> と <code>ys</code> の組み合わせを、条件を満たした場合だけ <code>write_to_db/2</code> で書き込む」という処理であるのがすぐに分かります。</p>
+
+<p>この時、仕様が変わり、「この関数の戻り値として、最後に <code>write_to_db/2</code> した戻り値が欲しい」と言われた場合、かなりコードを書き換えることになります。<br>
+以下のようになるでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">ys</span><span class="p">)</span> <span class="k">do</span>
+  <span class="no">Enum</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="no">nil</span><span class="p">,</span> <span class="k">fn</span> <span class="p">{</span><span class="n">x</span><span class="p">,</span> <span class="n">last_written_data</span><span class="p">}</span> <span class="o">-&gt;</span>
+    <span class="no">Enum</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">ys</span><span class="p">,</span> <span class="n">last_written_data</span><span class="p">,</span> <span class="k">fn</span> <span class="p">{</span><span class="n">y</span><span class="p">,</span> <span class="n">last_written_data</span><span class="p">}</span> <span class="o">-&gt;</span>
+      <span class="k">if</span> <span class="n">writable?</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">write_to_db</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+      <span class="k">else</span>
+        <span class="n">last_written_data</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>Enum.reduce/3</code> が出てきて、一気に複雑になってきた気がします。<br>
+そもそも <code>Enum.reduce/3</code> は <strong>大体なんでも出来る</strong> 関数なので、ほぼ再帰するのと変わらないぐらいの力を持ちます。このような汎用的な関数はあまり使いたくないところです。<sup id="fnref1"><a href="#fn1" rel="footnote" title="foldr のすごさを体験してみた で、Haskell の foldr という Enum.reduce/3 相当の関数を使って他の様々な関数を実装したことがあります。">1</a></sup></p>
+
+<p>副作用が使えるなら、<code>write_to_db/2</code> した戻り値を代入しておいて、最後にそれを返すだけで済むのに、ここまでコードが変わるのはなかなか辛いものがあります。</p>
+
+<p>そのため、その関数内だけでいいから、一時的に副作用を許可して欲しい、と思うことがあるのです。<br>
+なので、そういった場合に使えるライブラリを作りました。</p>
+
+<h2>
+<span id="mutable-ライブラリ" class="fragment"></span><a href="#mutable-%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA"><i class="fa fa-link"></i></a>mutable ライブラリ</h2>
+
+<ul>
+<li><a href="https://hex.pm/packages/mutable" rel="nofollow noopener" target="_blank">Hex</a></li>
+<li><a href="https://github.com/melpon/mutable" rel="nofollow noopener" target="_blank">GitHub</a></li>
+</ul>
+
+<p>使い方は簡単で、<code>Mutable.put/2</code> で値を設定して、<code>Mutable.get/1</code> で値を取得するだけ。取得と更新を同時に行う <code>Mutable.update/2</code> もあります。<br>
+ただしこれらは <code>Mutable.run/2</code> の中だけでしか使えないようになっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Mutable</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="ss">x:</span> <span class="mi">10</span><span class="p">],</span> <span class="k">fn</span> <span class="o">-&gt;</span>
+  <span class="n">assert</span> <span class="mi">10</span> <span class="o">==</span> <span class="no">Mutable</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="ss">:x</span><span class="p">)</span>
+  <span class="no">Mutable</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:x</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+  <span class="n">assert</span> <span class="mi">20</span> <span class="o">==</span> <span class="no">Mutable</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="ss">:x</span><span class="p">)</span>
+  <span class="no">Mutable</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="ss">:x</span><span class="p">,</span> <span class="o">&amp;</span><span class="p">(</span><span class="nv">&amp;1</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+  <span class="n">assert</span> <span class="mi">21</span> <span class="o">==</span> <span class="no">Mutable</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="ss">:x</span><span class="p">)</span>
+<span class="k">end</span><span class="p">)</span>
+<span class="c1"># エラー: ここでは :x にアクセスできない</span>
+<span class="no">Mutable</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="ss">:x</span><span class="p">)</span>
+</pre></div></div>
+
+<p>これを使うと、先程のコードは以下のようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">ys</span><span class="p">)</span> <span class="k">do</span>
+  <span class="no">Mutable</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="ss">last_written_data:</span> <span class="no">nil</span><span class="p">],</span> <span class="k">fn</span> <span class="o">-&gt;</span>
+    <span class="n">for</span> <span class="n">x</span> <span class="o">&lt;-</span> <span class="n">xs</span> <span class="k">do</span>
+      <span class="n">for</span> <span class="n">y</span> <span class="o">&lt;-</span> <span class="n">ys</span> <span class="k">do</span>
+        <span class="k">if</span> <span class="n">writable?</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="k">do</span>
+          <span class="n">data</span> <span class="o">=</span> <span class="n">write_to_db</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+          <span class="no">Mutable</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="ss">:last_written_data</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="k">end</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+    <span class="no">Mutable</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="ss">:last_written_data</span><span class="p">)</span>
+  <span class="k">end</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>最初のコードにちょっと付け足しただけです。<code>Enum.reduce/3</code> で頑張って値を上に渡すより、こっちの方が分かりやすいし、お手軽です。</p>
+
+<h2>
+<span id="プロセス辞書とmutable" class="fragment"></span><a href="#%E3%83%97%E3%83%AD%E3%82%BB%E3%82%B9%E8%BE%9E%E6%9B%B8%E3%81%A8mutable"><i class="fa fa-link"></i></a>プロセス辞書とmutable</h2>
+
+<p>mutable の実装としては、単純に <a href="https://hexdocs.pm/elixir/Process.html#get/2" rel="nofollow noopener" target="_blank"><code>Process.get/2</code></a> や <a href="https://hexdocs.pm/elixir/Process.html#put/2" rel="nofollow noopener" target="_blank"><code>Process.put/2</code></a> といった関数を呼んでプロセス辞書を読み書きしているだけです。<br>
+そのため、これらの関数を直接使えば、上記のようなコードは簡単に書けます。</p>
+
+<p>それなのに、なぜ mutable ライブラリを作ったかというと、</p>
+
+<ul>
+<li>プロセス辞書を使っている場合、一時的な副作用が欲しいだけなのかどうかがすぐに分からない。関数の外に情報を渡そうとしている可能性もある。</li>
+<li>プロセス辞書の場合、そのデータがスコープに閉じない。データを消すことを忘れていた場合、意図しない場所で問題になる可能性もあるし、メモリも無駄である。</li>
+<li>プロセス辞書の場合、キーの名前を間違えてた場合にデフォルト値が返されてしまう。これはバグを発見するのが遅れるので良くない。</li>
+</ul>
+
+<p>mutable なら、使っていればすぐに一時的な副作用が欲しいということが分かるし、<code>Mutable.run/2</code> の外に抜ければ副作用のために使ったデータは消えるし、初期化時に渡した値以外のキーを使おうとしたらエラーになります。</p>
+
+<p>複雑なロジックを前に、再帰や <code>Enum.reduce/3</code> を駆使して作るのもありですが、こういったやり方で解決するのも手です。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><a href="http://d.hatena.ne.jp/melpon/20111005/1317799929" rel="nofollow noopener" target="_blank">foldr のすごさを体験してみた</a> で、Haskell の <code>foldr</code> という <code>Enum.reduce/3</code> 相当の関数を使って他の様々な関数を実装したことがあります。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

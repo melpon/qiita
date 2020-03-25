@@ -1,0 +1,201 @@
+<p>ErlangでUnicode文字列を扱うのは、そんなに難しくありません。</p>
+
+<p>ただ、いくつかハマった点があるので、それを書いていきます。</p>
+
+<h2>
+<span id="文字列はコードポイントになる" class="fragment"></span><a href="#%E6%96%87%E5%AD%97%E5%88%97%E3%81%AF%E3%82%B3%E3%83%BC%E3%83%89%E3%83%9D%E3%82%A4%E3%83%B3%E3%83%88%E3%81%AB%E3%81%AA%E3%82%8B"><i class="fa fa-link"></i></a>文字列はコードポイントになる</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="s">"あいうえお"</span><span class="p">.</span>
+<span class="p">[</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">]</span>
+</pre></div></div>
+
+<p>文字の <code>$あ</code> はUnicodeのコードポイントで U+3042 になり、これは10進数で <code>12354</code> になります。</p>
+
+<p>256以上の値は、<code>iodata()</code>や<code>iolist()</code>を受け取る関数に渡すとエラーになるため、注意が必要です。</p>
+
+<p>なお <code>[12354,12356,12358,12360,12362]</code> という表示を日本語にしたいなら、起動オプションに <code>+pc unicode</code> を渡せばいい感じにやってくれます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="sc">$ </span><span class="n">erl</span> <span class="o">+</span><span class="n">pc</span> <span class="n">unicode</span>
+<span class="mi">1</span><span class="o">&gt;</span> <span class="s">"あいうえお"</span><span class="p">.</span>
+<span class="s">"あいうえお"</span>
+</pre></div></div>
+
+<h2>
+<span id="バイナリ文字列ではエンコーディングを指定する" class="fragment"></span><a href="#%E3%83%90%E3%82%A4%E3%83%8A%E3%83%AA%E6%96%87%E5%AD%97%E5%88%97%E3%81%A7%E3%81%AF%E3%82%A8%E3%83%B3%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E3%82%92%E6%8C%87%E5%AE%9A%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>バイナリ文字列ではエンコーディングを指定する</h2>
+
+<p>バイナリ文字列では、エンコーディングを指定しないと正しいバイト列になりません。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="o">&lt;&lt;</span><span class="s">"あいうえお"</span><span class="o">&gt;&gt;</span><span class="p">.</span>
+<span class="o">&lt;&lt;</span><span class="s">"BDFHJ"</span><span class="o">&gt;&gt;</span>
+<span class="mi">2</span><span class="o">&gt;</span> <span class="o">&lt;&lt;</span><span class="s">"あいうえお"</span><span class="o">/</span><span class="n">utf8</span><span class="o">&gt;&gt;</span><span class="p">.</span>
+<span class="o">&lt;&lt;</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">130</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">132</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">134</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">136</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">138</span><span class="o">&gt;&gt;</span>
+</pre></div></div>
+
+<p><code>&lt;&lt;"あいうえお"&gt;&gt;</code> と書いた時、<code>&lt;&lt;12354,12356,12358,12360,12362&gt;&gt;</code>と書いたのと同じ意味になります。<br>
+特にオプションを指定しなかった場合、バイナリで256以上の値を指定しても下位8ビットの値しか使われないため、それぞれ<code>&lt;&lt;66, 68, 70, 72, 74&gt;&gt;</code>となり、上記のように<code>&lt;&lt;"BDFHJ"&gt;&gt;</code>と表示されてしまいます。</p>
+
+<p>このようにするメリットは多分無いはずなので、ちゃんとエンコーディングは指定しましょう。</p>
+
+<p>なおUnicode関連で指定可能なエンコーディングは <code>utf8</code>, <code>utf16</code>, <code>utf16-little</code>, <code>utf32</code>, <code>utf32-little</code> の5種類です<sup id="fnref1"><a href="#fn1" rel="footnote" title="utf8-little や utf32-bit 等の指定も可能だけど、utf8, utf32 等と同じ意味なので紹介しない方向で">1</a></sup>。</p>
+
+<h2>
+<span id="バイナリ文字列にはエンコーディング情報が入っていない" class="fragment"></span><a href="#%E3%83%90%E3%82%A4%E3%83%8A%E3%83%AA%E6%96%87%E5%AD%97%E5%88%97%E3%81%AB%E3%81%AF%E3%82%A8%E3%83%B3%E3%82%B3%E3%83%BC%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0%E6%83%85%E5%A0%B1%E3%81%8C%E5%85%A5%E3%81%A3%E3%81%A6%E3%81%84%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>バイナリ文字列にはエンコーディング情報が入っていない</h2>
+
+<p>ある関数の引数でバイナリ文字列を受け取る時、その値にはエンコーディング情報は入っていません。<br>
+つまりそのバイナリ文字列が UTF-8 なのか UTF-16 LE なのかを知ることができません。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% BinStrはUnicodeのバイナリ文字列とする
+</span><span class="p">-</span><span class="ni">spec</span> <span class="nf">f</span><span class="p">(</span><span class="nf">binary</span><span class="p">())</span> <span class="p">::</span> <span class="n">ok</span><span class="p">.</span>
+<span class="nf">f</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="c">%% UTF-8とは限らないのでこれではエラーになる可能性がある
+</span>  <span class="nv">UniStr</span> <span class="o">=</span> <span class="nn">unicode</span><span class="p">:</span><span class="nf">characters_to_list</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">),</span>
+  <span class="p">...</span>
+</pre></div></div>
+
+<p>その関数で有効なエンコーディングをドキュメントに記述しておくか、引数にエンコーディングの情報を入れてあげましょう。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% BinStrはUTF-8のバイナリ文字列とする
+</span><span class="p">-</span><span class="ni">spec</span> <span class="nf">f</span><span class="p">(</span><span class="nf">binary</span><span class="p">())</span> <span class="p">::</span> <span class="n">ok</span><span class="p">.</span>
+<span class="nf">f</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="nv">UniStr</span> <span class="o">=</span> <span class="nn">unicode</span><span class="p">:</span><span class="nf">characters_to_list</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">),</span>
+  <span class="p">...</span>
+
+<span class="c">%% BinStrはUnicode文字列をEncodingでエンコードしたバイナリ文字列とする
+</span><span class="p">-</span><span class="ni">spec</span> <span class="nf">f</span><span class="p">(</span><span class="nf">binary</span><span class="p">(),</span> <span class="nv">Encoding</span><span class="p">)</span> <span class="p">::</span> <span class="n">ok</span><span class="p">.</span>
+<span class="nf">f</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="nv">UniStr</span> <span class="o">=</span> <span class="nn">unicode</span><span class="p">:</span><span class="nf">characters_to_list</span><span class="p">(</span><span class="nv">BinStr</span><span class="p">,</span> <span class="nv">Encoding</span><span class="p">),</span>
+  <span class="p">...</span>
+</pre></div></div>
+
+<p>これはファイルからデータを読み取った際も同様で、読んだバイナリがどのエンコーディングであるかについては、仕様として決めておくか、プログラム側でエンコーディングを指定するか、あるいはBOMを付けるという仕様があるなら<code>unicode:bom_to_encoding/1</code>等を使って判別してやるようにしましょう。</p>
+
+<h2>
+<span id="文字列をiodataやiolistとして扱わない" class="fragment"></span><a href="#%E6%96%87%E5%AD%97%E5%88%97%E3%82%92iodata%E3%82%84iolist%E3%81%A8%E3%81%97%E3%81%A6%E6%89%B1%E3%82%8F%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>文字列を<code>iodata()</code>や<code>iolist()</code>として扱わない</h2>
+
+<p><code>iodata()</code>や<code>iolist()</code>は、データを表す型です。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="p">-</span><span class="ni">type</span> <span class="nf">iodata</span><span class="p">()</span> <span class="p">::</span> <span class="nf">iolist</span><span class="p">()</span> <span class="p">|</span> <span class="nf">binary</span><span class="p">().</span>
+<span class="p">-</span><span class="ni">type</span> <span class="nf">iolist</span><span class="p">()</span> <span class="p">::</span> <span class="nf">maybe_improper_list</span><span class="p">(</span><span class="nf">byte</span><span class="p">()</span> <span class="p">|</span> <span class="nf">binary</span><span class="p">()</span> <span class="p">|</span> <span class="nf">iolist</span><span class="p">(),</span> <span class="nf">binary</span><span class="p">()</span> <span class="p">|</span> <span class="p">[]).</span>
+
+<span class="p">-</span><span class="ni">type</span> <span class="nf">byte</span><span class="p">()</span> <span class="p">::</span> <span class="mi">0</span><span class="p">..</span><span class="mi">255</span><span class="p">.</span>
+</pre></div></div>
+
+<p>文字列とデータは、実際の型は似ていますが、その意図は全然違います。<br>
+そのため、<code>iodata()</code>や<code>iolist()</code>を引数に取る関数に、文字列を渡してはいけません。</p>
+
+<p>渡すとこういうことになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nb">iolist_to_binary</span><span class="p">(</span><span class="s">"あいうえお"</span><span class="p">).</span>
+<span class="o">**</span> <span class="n">exception</span> <span class="nn">error</span><span class="p">:</span> <span class="n">bad</span> <span class="n">argument</span>
+     <span class="n">in</span> <span class="n">function</span>  <span class="nb">iolist_to_binary</span><span class="o">/</span><span class="mi">1</span>
+        <span class="n">called</span> <span class="n">as</span> <span class="nb">iolist_to_binary</span><span class="p">([</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">])</span>
+</pre></div></div>
+
+<p>前のセクションで書いたように、文字列はUnicodeのコードポイントで扱われるため、256以上になります。<br>
+しかし<code>byte()</code>型は<code>0..255</code>という値の範囲しか許していません。<br>
+そのため256以上の値が入った文字列を<code>iolist_to_binary/1</code>で変換しようとするとエラーになります。</p>
+
+<p>文字列とデータは全く別の存在であることを意識し、もし文字列をバイナリに変換したいなら、<code>unicode:characters_to_binary/{1,2,3}</code>を使うようにしましょう。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">unicode</span><span class="p">:</span><span class="nf">characters_to_binary</span><span class="p">(</span><span class="s">"あいうえお"</span><span class="p">).</span>
+<span class="o">&lt;&lt;</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">130</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">132</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">134</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">136</span><span class="p">,</span><span class="mi">227</span><span class="p">,</span><span class="mi">129</span><span class="p">,</span><span class="mi">138</span><span class="o">&gt;&gt;</span>
+</pre></div></div>
+
+<p>ただ、これは型でうまく分けれないため、ごっちゃにして扱ってることに気づくのは結構難しいと思います。<br>
+型の別名を付けてあげて、コードレビューする際に気を付けるしか無いんじゃないかなと思います。</p>
+
+<h2>
+<span id="フォーマット文字列でsを使わない" class="fragment"></span><a href="#%E3%83%95%E3%82%A9%E3%83%BC%E3%83%9E%E3%83%83%E3%83%88%E6%96%87%E5%AD%97%E5%88%97%E3%81%A7s%E3%82%92%E4%BD%BF%E3%82%8F%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>フォーマット文字列で<code>~s</code>を使わない</h2>
+
+<p>フォーマット文字列で <code>~s</code> を使う場合、引数に指定可能なのは <code>iolist() | binary() | atom()</code> です。<br>
+<code>iolist() | binary()</code> は <code>iodata()</code> 型であるので、<code>iodata() | atom()</code> である、と言ってもいいでしょう。</p>
+
+<p><code>iodata()</code>は文字列を表す型ではないので、<code>~s</code>に文字列を渡すのは間違いです。<br>
+もし渡すと、以下のようになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~s~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="o">**</span> <span class="n">exception</span> <span class="nn">error</span><span class="p">:</span> <span class="n">bad</span> <span class="n">argument</span>
+     <span class="n">in</span> <span class="n">function</span>  <span class="nn">io</span><span class="p">:</span><span class="n">format</span><span class="o">/</span><span class="mi">3</span>
+        <span class="n">called</span> <span class="n">as</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="o">&lt;</span><span class="mi">0</span><span class="p">.</span><span class="mi">50</span><span class="p">.</span><span class="mi">0</span><span class="o">&gt;</span><span class="p">,</span><span class="s">"</span><span class="si">~s~n</span><span class="s">"</span><span class="p">,[[</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">]])</span>
+</pre></div></div>
+
+<p>代わりに<code>~ts</code>を使います。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">2</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"~ts</span><span class="si">~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="err">あいうえお</span>
+<span class="n">ok</span>
+</pre></div></div>
+
+<p>正直<code>~s</code>を使う場面というのがいまいち分からないので、ここで使えるよ的なのがあれば教えてください。</p>
+
+<p>なお、<code>erl +pc unicode</code>で起動した状態で、<code>~p</code>の代わりに<code>~tp</code>を使うと、日本語を渡した際に綺麗な表示になります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="sc">$ </span><span class="n">erl</span>
+<span class="mi">1</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="p">[</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">]</span>
+<span class="n">ok</span>
+
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"~tp</span><span class="si">~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="p">[</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">]</span>
+<span class="n">ok</span>
+
+<span class="sc">$ </span><span class="n">erl</span> <span class="o">+</span><span class="n">pc</span> <span class="n">unicode</span>
+<span class="mi">1</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="p">[</span><span class="mi">12354</span><span class="p">,</span><span class="mi">12356</span><span class="p">,</span><span class="mi">12358</span><span class="p">,</span><span class="mi">12360</span><span class="p">,</span><span class="mi">12362</span><span class="p">]</span>
+<span class="n">ok</span>
+
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"~tp</span><span class="si">~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"あいうえお"</span><span class="p">]).</span>
+<span class="s">"あいうえお"</span>
+<span class="n">ok</span>
+</pre></div></div>
+
+<p>ただし、任意の値（ただの整数のリストとか）を渡した際に変な文字列として表示される可能性が上がるので、扱いは少し慎重になった方がいいかもしれません。</p>
+
+<h2>
+<span id="io_libformat2の戻り値に気を付ける" class="fragment"></span><a href="#io_libformat2%E3%81%AE%E6%88%BB%E3%82%8A%E5%80%A4%E3%81%AB%E6%B0%97%E3%82%92%E4%BB%98%E3%81%91%E3%82%8B"><i class="fa fa-link"></i></a><code>io_lib:format/2</code>の戻り値に気を付ける</h2>
+
+<p><code>io_lib:format/2</code>の戻り値は <code>chars()</code> 型です。<br>
+<code>chars()</code>型は以下のように定義されています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">char</span><span class="p">()</span> <span class="p">::</span> <span class="mi">0</span><span class="p">..</span><span class="mi">16#10ffff</span>
+<span class="nf">chars</span><span class="p">()</span> <span class="p">::</span> <span class="p">[</span><span class="nf">char</span><span class="p">()</span> <span class="p">|</span> <span class="nf">chars</span><span class="p">()]</span>
+</pre></div></div>
+
+<p><code>char()</code> は Unicode のコードポイントの範囲を取り、<code>char()</code>の値か、そのリストを要素とするリストが <code>chars()</code> 型になっています。</p>
+
+<p>この戻り値を<code>binary()</code>型に変換する方法を調べると、<code>iolist_to_binary/1</code>や<code>list_to_binary/1</code>を使っているのが見つかったりしますが、前のセクションで書いたように、文字列を単なるデータ列として扱うのは間違いです。</p>
+
+<p>ちゃんと <code>unicode:characters_to_binary/1</code> を使って変換するようにしましょう。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="sc">$ </span><span class="n">erl</span> <span class="o">+</span><span class="n">pc</span> <span class="n">unicode</span>
+<span class="mi">1</span><span class="o">&gt;</span> <span class="nn">unicode</span><span class="p">:</span><span class="nf">characters_to_binary</span><span class="p">(</span><span class="nn">io_lib</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"~ts ~ts</span><span class="si">~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"foo"</span><span class="p">,</span> <span class="s">"あいうえお"</span><span class="p">])).</span>
+<span class="o">&lt;&lt;</span><span class="s">"foo あいうえお</span><span class="se">\n</span><span class="s">"</span><span class="o">/</span><span class="n">utf8</span><span class="o">&gt;&gt;</span>
+</pre></div></div>
+
+<p>なお <code>io_lib:format/2</code> の結果をコードポイントのリスト（つまり文字列）にする際には <code>lists:flatten/1</code> を使えばいいです。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="sc">$ </span><span class="n">erl</span> <span class="o">+</span><span class="n">pc</span> <span class="n">unicode</span>
+<span class="mi">1</span><span class="o">&gt;</span> <span class="nn">lists</span><span class="p">:</span><span class="nf">flatten</span><span class="p">(</span><span class="nn">io_lib</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"~ts ~ts</span><span class="si">~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="s">"foo"</span><span class="p">,</span> <span class="s">"あいうえお"</span><span class="p">])).</span>
+<span class="s">"foo あいうえお</span><span class="se">\n</span><span class="s">"</span>
+</pre></div></div>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/doc/apps/stdlib/unicode_usage.html" rel="nofollow noopener" target="_blank">Erlang -- Using Unicode in Erlang</a></li>
+<li><a href="http://erlang.org/doc/man/unicode.html" rel="nofollow noopener" target="_blank">Erlang -- unicode</a></li>
+<li><a href="http://erlang.org/doc/man/io.html" rel="nofollow noopener" target="_blank">Erlang -- io</a></li>
+<li><a href="http://erlang.org/doc/man/io_lib.html" rel="nofollow noopener" target="_blank">Erlang -- io_lib</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>utf8-little</code> や <code>utf32-bit</code> 等の指定も可能だけど、<code>utf8</code>, <code>utf32</code> 等と同じ意味なので紹介しない方向で <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

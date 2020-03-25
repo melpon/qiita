@@ -1,0 +1,258 @@
+<p>Elixir 1.6 で <a href="https://hexdocs.pm/elixir/master/DynamicSupervisor.html" rel="nofollow noopener" target="_blank"><code>DynamicSupervisor</code></a> というモジュールが入る予定です。</p>
+
+<h2>
+<span id="dynamicsupervisor-とは" class="fragment"></span><a href="#dynamicsupervisor-%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a><code>DynamicSupervisor</code> とは</h2>
+
+<p>端的に言えば <strong><code>:simple_one_for_one</code> を殺すためのモジュール</strong> です。</p>
+
+<p><code>Supervisor</code> モジュールの再起動戦略として <code>:one_for_one</code>, <code>:rest_for_one</code>, <code>:one_for_all</code>, <code>:simple_one_for_one</code> がありますが、この <code>:simple_one_for_one</code> の代替となる機能を <code>DynamicSupervisor</code> は提供します。<br>
+実際 Elixir 1.6 で <code>:simple_one_for_one</code> は <em>非推奨(deprecated)</em> になります。<sup id="fnref1"><a href="#fn1" rel="footnote" title=":simple_one_for_one は、非推奨になるしドキュメントからも消えるものの、機能としてはずっと残り続けます（OTP の機能なので）。">1</a></sup></p>
+
+<p><code>Supervisor</code> では child spec を書いて子と一緒に起動させることが多いですが、<code>DynamicSupervisor</code> は必ず子が空の状態で起動します。<br>
+起動後、<code>DynamicSupervisor.start_child/2</code> で動的に追加する形になります。まさに <code>:simple_one_for_one</code> の機能です。</p>
+
+<h2>
+<span id="なぜ-simple_one_for_one-を使わないのか" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C-simple_one_for_one-%E3%82%92%E4%BD%BF%E3%82%8F%E3%81%AA%E3%81%84%E3%81%AE%E3%81%8B"><i class="fa fa-link"></i></a>なぜ <code>:simple_one_for_one</code> を使わないのか</h2>
+
+<p><code>:simple_one_for_one</code> が、Erlang のスーパーバイザの中でかなり特殊だからです。</p>
+
+<p>スーパーバイザのドキュメントには「<code>:simple_one_for_one</code> でない場合は〜となる。<code>:simple_one_for_one</code> の場合は〜となる」というのが多くあり、スーパーバイザを理解するのが難しくなっています。<br>
+実際、例えば <a href="https://hexdocs.pm/elixir/1.5.2/Supervisor.html#start_child/2" rel="nofollow noopener" target="_blank"><code>Supervisor.start_child/2</code></a> は、<code>:simple_one_for_one</code> 以外なら child spec を渡すのに、<code>:simple_one_for_one</code> の場合は起動する引数のリストを渡す必要があります。<br>
+また、<code>:simple_one_for_one</code> には各プロセスに対して一意な ID が不要で、そのために <a href="https://hexdocs.pm/elixir/1.5.2/Supervisor.html#terminate_child/2" rel="nofollow noopener" target="_blank"><code>Supervisor.terminate_child/2</code></a> で PID しか指定できないし、<a href="https://hexdocs.pm/elixir/1.5.2/Supervisor.html#delete_child/2" rel="nofollow noopener" target="_blank"><code>Supervisor.delete_child/2</code></a> はサポートしていません。</p>
+
+<p>この問題を解決するため、<code>:simple_one_for_one</code> を別のモジュールとして独立させて利用することにしたようです。<sup id="fnref2"><a href="#fn2" rel="footnote" title="あとは GenStage で子の数を制限したりできるスーパーバイザが欲しかったというのもあったみたいだけれども、GenStage が Elixir に合流する予定が無くなったのでそこはあまり理由にならない">2</a></sup></p>
+
+<p>実際、<code>DynamicSupervisor</code> を導入することによって、<code>Supervisor</code> のドキュメントは <a href="https://github.com/elixir-lang/elixir/commit/7f8db39ce27854c34b7d722783f5e89a9058fbe1#diff-9d432a14620b20769d459b1041935cf8" rel="nofollow noopener" target="_blank">結構スッキリしました</a>。</p>
+
+<h2>
+<span id="dynamicsupervisor-を現実的な方法で利用する" class="fragment"></span><a href="#dynamicsupervisor-%E3%82%92%E7%8F%BE%E5%AE%9F%E7%9A%84%E3%81%AA%E6%96%B9%E6%B3%95%E3%81%A7%E5%88%A9%E7%94%A8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a><code>DynamicSupervisor</code> を現実的な方法で利用する</h2>
+
+<p>簡単な利用方法は <a href="https://qiita.com/kdxu/items/5e11a9b26700ac55fed2#dynamic-supervisor">Elixir 1.6.0 の新機能の紹介</a> に書かれています。<br>
+<code>DynamicSupervisor</code> を起動するには、以下のように <code>start_link/1</code> を使えばいいようです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">sup</span><span class="p">}</span> <span class="o">=</span> <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+</pre></div></div>
+
+<p>ただ、実際にこういうコードを書くことは無く、大抵の場合はアプリケーションのスーパーバイザにぶら下げることになるでしょう。<br>
+ここでは、現実的に <code>DynamicSupervisor</code> を利用したコードを書くならどのようになるのかを説明します。</p>
+
+<p><code>DynamicSupervisor</code> をモジュールベースで利用するなら、以下のように書いてアプリケーションのスーパーバイザにぶら下げることになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">DynamicSupervisor</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[],</span> <span class="ss">name:</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">DynamicSupervisor</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+    <span class="p">]</span>
+
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>あるいは <code>MyApp.Client.Supervisor</code> モジュールを定義するのが面倒なら以下のように書くという手もあります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="p">%{</span>
+        <span class="ss">id:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+        <span class="ss">start:</span> <span class="p">{</span>
+          <span class="no">DynamicSupervisor</span><span class="p">,</span>
+          <span class="ss">:start_link</span><span class="p">,</span>
+          <span class="p">[[</span><span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">]]</span>
+        <span class="p">}</span>
+      <span class="p">},</span>
+    <span class="p">]</span>
+
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>詳細については <a href="https://qiita.com/melpon/items/63c4baf9aae82a2821f2" id="reference-d0731d7745f21fe5a8e4">スーパーバイザの下にスーパーバイザをぶら下げる簡単な方法</a> を参照して下さい。この記事と同様の方法でスーパーバイザの下に <code>DynamicSupervisor</code> をぶら下げています。</p>
+
+<p>これで <code>DynamicSupervisor</code> を起動できたので、あとは子を起動するだけです。<br>
+<code>:simple_one_for_one</code> では <code>init/1</code> 時に指定した1種類のモジュールしか起動できませんでしたが、<code>DynamicSupervisor</code> では <strong>何種類のモジュールでも起動できます</strong>。<br>
+が、通常は1種類しか使わないので、今回の例も1種類のモジュールだけでやります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GenServer</span><span class="p">,</span> <span class="ss">restart:</span> <span class="ss">:temporary</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[])</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># 子を生成</span>
+<span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_child</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>DynamicSupervisor.start_child/2</code> の第一引数にはスーパーバイザの名前か pid を、第二引数には child spec を渡します。<br>
+モジュール名を渡せば、そのモジュールの <code>child_spec/1</code> を呼び出して起動します。<br>
+詳細については <a href="https://qiita.com/melpon/items/bae4105c68f8da50e3c7" id="reference-b7dbf1bbe2a7e228ecaf">Elixir 1.5 の合理化された child spec</a> を参照して下さい。</p>
+
+<p><code>use GenServer</code> がデフォルトで定義する <code>child_spec/1</code> は <code>restart: :permanent</code> になっているので、大体の場合は <code>:temporary</code> に変えておいた方がいいでしょう。<br>
+<code>DynamicSupervisor</code> の子は動的に大量に作ることになり、大抵の場合は再起動したら困るものが殆どになるはずです。</p>
+
+<p>また、<code>DynamicSupervisor</code> の性質上、任意の文字列をキーにして子プロセスを検索したくなるということがあります。<br>
+例えばセッションならセッションID、何らかのルームならルームIDで pid を検索、といった具合です。<br>
+<code>:one_for_one</code> で作ったプロセスなら、大体 <code>GenServer.start_link/3</code> 時に <code>name: __MODULE__</code> とか書いて名前を付けて利用するだけで済みますが、<code>DynamicSupervisor</code> では子を動的に作るので atom を動的に作ることになり、これは死ぬ未来しかありません。<br>
+そのため、子プロセスを整数や文字列で検索したくなるのです。</p>
+
+<p>このような用途のために、丁度 <a href="https://hexdocs.pm/elixir/Registry.html" rel="nofollow noopener" target="_blank"><code>Registry</code></a> というライブラリがあります。<br>
+これを使えば、以下のように書けます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GenServer</span><span class="p">,</span> <span class="ss">restart:</span> <span class="ss">:temporary</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([</span><span class="n">client_id</span><span class="p">])</span> <span class="k">do</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="p">{</span><span class="ss">:via</span><span class="p">,</span> <span class="no">Registry</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Registry</span><span class="p">,</span> <span class="n">client_id</span><span class="p">}}</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[],</span> <span class="ss">name:</span> <span class="n">name</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">client_id</span> <span class="o">=</span> <span class="s2">"..."</span>
+
+<span class="c1"># 子プロセスを生成</span>
+<span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_child</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="p">,</span> <span class="p">[</span><span class="n">client_id</span><span class="p">]})</span>
+
+<span class="c1"># Registry を経由して client_id のプロセスを呼び出す</span>
+<span class="n">name</span> <span class="o">=</span> <span class="p">{</span><span class="ss">:via</span><span class="p">,</span> <span class="no">Registry</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Registry</span><span class="p">,</span> <span class="n">client_id</span><span class="p">}}</span>
+<span class="n">value</span> <span class="o">=</span> <span class="no">GenServer</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="ss">:get_value</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>MyApp.Client.start_link/1</code> で、<code>name</code> の指定をよく分からない形式で書いていますが、これは <code>Registry</code> のドキュメントにある通りの書き方です。<br>
+このよく分からない形式は、<code>GenServer.call/2</code> 時にも使えて、このように書くことでプロセス ID や atom 形式の名前の代わりに利用できます。<br>
+詳細は後日書きます。→ <a href="/kenichirow" class="user-mention js-hovercard" title="kenichirow" data-hovercard-target-type="user" data-hovercard-target-name="kenichirow">@kenichirow</a> が書いてくれました <a href="https://qiita.com/kenichirow/items/d9c08b30da81f7fa2364" id="reference-1c379585e46f42df0aa1">Registry の via_tuple について</a></p>
+
+<p>なお、ここまで書くことになったら、<code>MyApp.Client.Supervisor</code> をモジュールベースにして、<code>MyApp.Client.Supervisor.start_child(client_id)</code> のように書いて構築できるようにしておいた方がいいでしょう。<br>
+また、<code>MyApp.Client.get_value()</code> を定義して、その中で <code>GenServer.call/2</code> するようなコードにしておいた方が良いです。<sup id="fnref3"><a href="#fn3" rel="footnote" title="これは DynamicSupervisor とは関係なく、普通の抽象化の話です。">3</a></sup></p>
+
+<p>最終的に、<code>DynamicSupervisor</code> を利用した一般的なアプリケーションは、以下のように書くことになるでしょう。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/client.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span> <span class="k">do</span>
+  <span class="c1"># restart: :temporary にする</span>
+  <span class="kn">use</span> <span class="no">GenServer</span><span class="p">,</span> <span class="ss">restart:</span> <span class="ss">:temporary</span>
+
+  <span class="c1"># 一意な ID を受け取り Registry に登録して起動する</span>
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([</span><span class="n">client_id</span><span class="p">])</span> <span class="k">do</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="p">{</span><span class="ss">:via</span><span class="p">,</span> <span class="no">Registry</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Registry</span><span class="p">,</span> <span class="n">client_id</span><span class="p">}}</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">%{</span><span class="ss">value:</span> <span class="mi">100</span><span class="p">},</span> <span class="ss">name:</span> <span class="n">name</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">GenServer</span>
+  <span class="k">def</span> <span class="n">handle_call</span><span class="p">(</span><span class="ss">:get_value</span><span class="p">,</span> <span class="n">_from</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:reply</span><span class="p">,</span> <span class="n">state</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">state</span><span class="p">}</span>
+  <span class="k">end</span>
+
+  <span class="c1"># Registry 経由で call する処理を自身のモジュールで提供する</span>
+  <span class="k">def</span> <span class="n">get_value</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="p">{</span><span class="ss">:via</span><span class="p">,</span> <span class="no">Registry</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Registry</span><span class="p">,</span> <span class="n">client_id</span><span class="p">}}</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="ss">:get_value</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/client/supervisor.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">DynamicSupervisor</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[],</span> <span class="ss">name:</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">DynamicSupervisor</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="c1"># 子を起動する処理を関数で提供する</span>
+  <span class="k">def</span> <span class="n">start_child</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">DynamicSupervisor</span><span class="o">.</span><span class="n">start_child</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="p">,</span> <span class="p">[</span><span class="n">client_id</span><span class="p">]})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/application.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+      <span class="c1"># MyApp.Client 用の Registry を起動しておく</span>
+      <span class="p">{</span><span class="no">Registry</span><span class="p">,</span> <span class="ss">keys:</span> <span class="ss">:unique</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Registry</span><span class="p">},</span>
+    <span class="p">]</span>
+
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>これによって、以下のようにシンプルに利用できるようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">client_id</span> <span class="o">=</span> <span class="s2">"..."</span>
+
+<span class="c1"># 子プロセスを起動する</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="o">.</span><span class="n">start_child</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+
+<span class="c1"># 子プロセスからデータを取得する</span>
+<span class="n">value</span> <span class="o">=</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="n">client_id</span><span class="p">)</span>
+</pre></div></div>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p><code>:simple_one_for_one</code> のことは忘れて、Elixir 1.6 からは良い感じに <code>DynamicSupervisor</code> を活用していきましょう。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://github.com/elixir-lang/gen_stage/issues/12" rel="nofollow noopener" target="_blank">Proposal for DynamicSupervisor · Issue #12 · elixir-lang/gen_stage</a></li>
+<li><a href="https://elixirforum.com/t/the-future-of-genstage-and-flow/3323" rel="nofollow noopener" target="_blank">The future of GenStage and Flow - Elixir News - Elixir Forum</a></li>
+<li><a href="https://hexdocs.pm/elixir/master/DynamicSupervisor.html" rel="nofollow noopener" target="_blank">DynamicSupervisor – Elixir v1.6.0-dev</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>:simple_one_for_one</code> は、非推奨になるしドキュメントからも消えるものの、機能としてはずっと残り続けます（OTP の機能なので）。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>あとは <a href="https://hex.pm/packages/gen_stage" rel="nofollow noopener" target="_blank">GenStage</a> で子の数を制限したりできるスーパーバイザが欲しかったというのもあったみたいだけれども、GenStage が Elixir に合流する予定が無くなったのでそこはあまり理由にならない <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>これは <code>DynamicSupervisor</code> とは関係なく、普通の抽象化の話です。 <a href="#fnref3">↩</a></p>
+</li>
+
+</ol>
+</div>

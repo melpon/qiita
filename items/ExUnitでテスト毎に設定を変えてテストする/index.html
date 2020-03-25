@@ -1,0 +1,194 @@
+<p>ExUnitで、テスト毎に設定を変えたいことがあります。</p>
+
+<p>例えば以下のようなケースです。</p>
+
+<ul>
+<li>設定ファイルで指定するモジュールを切り替えてテストしたい</li>
+</ul>
+
+<p>データの保存先としてETSやDETS、RedisやDynamoDBを使うモジュールをそれぞれ用意することがあります。<br>
+これらのモジュールを設定で切り替えている場合、各モジュールをテストするためには、テスト毎に設定を変えてやる必要があります。</p>
+
+<ul>
+<li>ある処理がタイムアウトすることを確認するためのテストで、タイムアウトの時間を短くしてテストしたい</li>
+</ul>
+
+<p>タイムアウトの時間が30秒とかだと、タイムアウトのテストをするのが難しいため、タイムアウトのテストだけ時間を短くしてテストをしたくなります。<br>
+タイムアウトの時間を設定から読んでいる場合、その時間をタイムアウトのテストだけ短くしてやる必要があります。</p>
+
+<p>ExUnitで、これらを実現する方法を説明します。</p>
+
+<h2>
+<span id="何が問題か" class="fragment"></span><a href="#%E4%BD%95%E3%81%8C%E5%95%8F%E9%A1%8C%E3%81%8B"><i class="fa fa-link"></i></a>何が問題か</h2>
+
+<p>例えば以下の様なアプリケーションがあったとします。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="nv">@backend_procname</span> <span class="ss">:backend_process_name</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># バックエンドモジュールをenvから取得する</span>
+    <span class="n">module</span> <span class="o">=</span> <span class="no">Application</span><span class="o">.</span><span class="n">get_env</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:backend</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">ETS</span><span class="p">)</span>
+    <span class="c1"># バックエンドモジュールのプロセスをsupervisorに登録する</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="n">module</span><span class="o">.</span><span class="n">child_spec</span><span class="p">(</span><span class="nv">@backend_procname</span><span class="p">),</span>
+    <span class="p">]</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">get_name</span><span class="p">()</span> <span class="k">do</span>
+    <span class="c1"># 実行しているバックエンドのモジュール名を取得する</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="nv">@backend_procname</span><span class="p">,</span> <span class="p">{</span><span class="ss">:get_name</span><span class="p">,</span> <span class="n">key</span><span class="p">})</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">get_value</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># タイムアウトの時間をenvから取得する</span>
+    <span class="n">timeout</span> <span class="o">=</span> <span class="no">Application</span><span class="o">.</span><span class="n">get_env</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:timeout</span><span class="p">,</span> <span class="mi">5000</span><span class="p">)</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="nv">@backend_procname</span><span class="p">,</span> <span class="p">{</span><span class="ss">:get_value</span><span class="p">,</span> <span class="n">key</span><span class="p">},</span> <span class="n">timeout</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">set_value</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">GenServer</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="nv">@backend_procname</span><span class="p">,</span> <span class="p">{</span><span class="ss">:set_value</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">})</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>このテストは、以下の様に書きたいと思うかもしれません。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/my_app_test.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyAppTest</span> <span class="k">do</span>
+  <span class="n">test</span> <span class="s2">"ets backend"</span> <span class="k">do</span>
+    <span class="c1"># バックエンドを DETS にする</span>
+    <span class="no">Application</span><span class="o">.</span><span class="n">put_env</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:backend</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">DETS</span><span class="p">)</span>
+    <span class="n">assert</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">DETS</span> <span class="o">==</span> <span class="no">MyApp</span><span class="o">.</span><span class="n">get_name</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="n">test</span> <span class="s2">"redis backend"</span> <span class="k">do</span>
+    <span class="c1"># バックエンドを Redis にする</span>
+    <span class="no">Application</span><span class="o">.</span><span class="n">put_env</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:backend</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">Redis</span><span class="p">)</span>
+    <span class="n">assert</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">Redis</span> <span class="o">==</span> <span class="no">MyApp</span><span class="o">.</span><span class="n">get_name</span><span class="p">()</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>しかしこれは正しく動きません。<br>
+<code>MyApp.get_name()</code>で、意図しないバックエンド名を取得し、<code>assert</code> に引っかかることになります。</p>
+
+<p>これは、テスト開始時には、既にアプリケーションが起動しているからです。<br>
+<code>mix test</code> を実行した時、以下の順序で処理が行われています。</p>
+
+<ol>
+<li>設定ファイル <code>config/config.exs</code> をロード</li>
+<li>各種ソースのコンパイル</li>
+<li>プロジェクトのアプリケーションを起動</li>
+<li>ExUnitを起動して、<code>test/test_helper.exs</code>をロードし、<code>test/*_test.exs</code>ファイルを探す</li>
+<li>それぞれのテストを実行する</li>
+</ol>
+
+<p>テスト開始直後、つまり 5 の時点で設定を上書きしても手遅れです。<br>
+なぜなら、3 に書いてあるように、<strong>テスト実行時には既にアプリケーションが起動している</strong> からです。<br>
+3 のアプリケーション開始時に設定を読んで処理を実行している場合、5 のテスト実行時に設定を書き換えても、もうその設定が読まれることが無いため、手遅れなのです。</p>
+
+<p>また、<code>Application.put_env/3</code> で設定を書き換えると次のテスト開始時にも影響が出るため、毎回値を戻す必要があります。</p>
+
+<h2>
+<span id="解決する" class="fragment"></span><a href="#%E8%A7%A3%E6%B1%BA%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>解決する</h2>
+
+<p><strong>アプリケーションを起動せずにテストを開始する</strong> ことで、これらの問題を解決できます。</p>
+
+<p><code>mix test --no-start</code> のように <code>--no-start</code> を指定すると、アプリケーションを開始せずにテストを開始します。<br>
+つまり上記の 3. を省いてテストを開始します。</p>
+
+<p>テスト開始時に自分で設定ファイルを読み込んで適用（設定の初期化）し、テストごとに異なる設定を適用し、その後にアプリケーションを起動することで、設定を変えて起動できるようになります。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/test_helper.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">TestHelper</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">setup</span><span class="p">(</span><span class="n">application</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># 初期設定を読み込んで適用する</span>
+    <span class="n">init</span><span class="p">(</span><span class="no">Mix</span><span class="o">.</span><span class="no">Config</span><span class="o">.</span><span class="n">read!</span><span class="p">(</span><span class="s2">"config/config.exs"</span><span class="p">))</span>
+    <span class="c1"># テスト毎に異なる設定の上書き</span>
+    <span class="no">Enum</span><span class="o">.</span><span class="n">each</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">override</span><span class="p">(</span><span class="nv">&amp;1</span><span class="p">))</span>
+    <span class="c1"># アプリケーション開始</span>
+    <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">apps</span><span class="p">}</span> <span class="o">=</span> <span class="no">Application</span><span class="o">.</span><span class="n">ensure_all_started</span><span class="p">(</span><span class="n">application</span><span class="p">)</span>
+
+    <span class="c1"># 終了時には全てのアプリケーションを止める</span>
+    <span class="no">ExUnit</span><span class="o">.</span><span class="no">Callbacks</span><span class="o">.</span><span class="n">on_exit</span><span class="p">(</span><span class="k">fn</span> <span class="o">-&gt;</span>
+      <span class="no">Enum</span><span class="o">.</span><span class="n">each</span><span class="p">(</span><span class="n">apps</span><span class="p">,</span> <span class="o">&amp;</span><span class="no">Application</span><span class="o">.</span><span class="n">stop</span><span class="p">(</span><span class="nv">&amp;1</span><span class="p">))</span>
+    <span class="k">end</span><span class="p">)</span>
+    <span class="ss">:ok</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">init</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">for</span> <span class="p">{</span><span class="n">app</span><span class="p">,</span> <span class="n">kvs</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="n">config</span> <span class="k">do</span>
+      <span class="n">for</span> <span class="p">{</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="n">kvs</span> <span class="k">do</span>
+        <span class="no">Application</span><span class="o">.</span><span class="n">put_env</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="ss">persistent:</span> <span class="no">true</span><span class="p">)</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">override</span><span class="p">({</span><span class="n">application</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">})</span> <span class="k">do</span>
+    <span class="no">Application</span><span class="o">.</span><span class="n">put_env</span><span class="p">(</span><span class="n">application</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="ss">persistent:</span> <span class="no">true</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">override</span><span class="p">({</span><span class="n">application</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">subkey</span><span class="p">,</span> <span class="n">value</span><span class="p">})</span> <span class="k">do</span>
+    <span class="n">kw</span> <span class="o">=</span> <span class="no">Application</span><span class="o">.</span><span class="n">get_env</span><span class="p">(</span><span class="n">application</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">kw</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">kw</span><span class="p">,</span> <span class="n">subkey</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+    <span class="no">Application</span><span class="o">.</span><span class="n">put_env</span><span class="p">(</span><span class="n">application</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">kw</span><span class="p">,</span> <span class="ss">persistent:</span> <span class="no">true</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>これは以下のように使います。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">test/my_app_test.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyAppTest</span> <span class="k">do</span>
+  <span class="n">test</span> <span class="s2">"ets backend"</span> <span class="k">do</span>
+    <span class="c1"># バックエンドを DETS にして起動する</span>
+    <span class="no">TestHelper</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="p">[{</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:backend</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">DETS</span><span class="p">}])</span>
+    <span class="n">assert</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">DETS</span> <span class="o">==</span> <span class="no">MyApp</span><span class="o">.</span><span class="n">get_name</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="n">test</span> <span class="s2">"redis backend"</span> <span class="k">do</span>
+    <span class="c1"># バックエンドを Redis にして起動する</span>
+    <span class="no">TestHelper</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="p">[{</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:backend</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">Redis</span><span class="p">}])</span>
+    <span class="n">assert</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Backend</span><span class="o">.</span><span class="no">Redis</span> <span class="o">==</span> <span class="no">MyApp</span><span class="o">.</span><span class="n">get_name</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="n">test</span> <span class="s2">"timeout"</span> <span class="k">do</span>
+    <span class="c1"># バックエンドをダミーモジュールにして、タイムアウトをテストする</span>
+    <span class="no">TestHelper</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="p">[{</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:timeout</span><span class="p">,</span> <span class="mi">1</span><span class="p">}])</span>
+    <span class="p">{</span><span class="ss">:timeout</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">=</span> <span class="n">catch_exit</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="n">get_value</span><span class="p">())</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>また、これによって、全てのテストはアプリケーションを開始せずに実行される前提になります。<br>
+毎回 <code>mix test --no-start</code> と入力するのは大変なので、<code>mix test</code> と入力するだけで同じ効果になるようにしましょう。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">mix.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Myapp</span><span class="o">.</span><span class="no">Mixfile</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">project</span> <span class="k">do</span>
+    <span class="p">[</span><span class="ss">app:</span> <span class="ss">:myapp</span><span class="p">,</span>
+     <span class="o">...</span><span class="p">,</span>
+     <span class="ss">aliases:</span> <span class="p">[</span><span class="ss">test:</span> <span class="s2">"test --no-start"</span><span class="p">]]</span>
+  <span class="k">end</span>
+
+  <span class="o">...</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>これで、いつも通り <code>mix test</code> と打つだけでテストができます。</p>

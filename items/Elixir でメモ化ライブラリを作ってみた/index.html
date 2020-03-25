@@ -1,0 +1,126 @@
+<p>Erlang/OTP 20 の ETS で <a href="http://erlang.org/doc/man/ets.html#select_replace-2" rel="nofollow noopener" target="_blank">CAS が使えるようになった</a> のが嬉しかったので、Elixir でメモ化ライブラリを作ってリリースしてみました。</p>
+
+<h2>
+<span id="動機" class="fragment"></span><a href="#%E5%8B%95%E6%A9%9F"><i class="fa fa-link"></i></a>動機</h2>
+
+<p>Elixirで、高速で、汎用的で、簡単に使えるキャッシュ処理を書くのはかなり難しいと考えています。</p>
+
+<p>関数呼び出しの結果をキャッシュしようと思った時、一番最初に考えるのは以下のようなコードです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+  <span class="k">case</span> <span class="ss">:ets</span><span class="o">.</span><span class="n">lookup</span><span class="p">(</span><span class="nv">@tab</span><span class="p">,</span> <span class="nv">@key</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">[]</span> <span class="o">-&gt;</span>
+      <span class="n">result</span> <span class="o">=</span> <span class="n">load_heavy_data_from_database</span><span class="p">()</span>
+      <span class="ss">:ets</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="nv">@tab</span><span class="p">,</span> <span class="p">{</span><span class="nv">@key</span><span class="p">,</span> <span class="n">result</span><span class="p">})</span>
+    <span class="p">[{</span><span class="n">_</span><span class="p">,</span> <span class="n">result</span><span class="p">}]</span> <span class="o">-&gt;</span>
+      <span class="n">result</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>しかしこの書き方には問題があります。<br>
+<code>:ets.lookup/2</code> してから <code>:ets.insert/2</code> するまでに他のプロセスが割り込む余地があるため、この関数が複数のプロセスから同時に呼ばれた場合、<code>load_heavy_data_from_database/0</code> が同時に実行されることがあるのです。<br>
+ファイルやデータベース、外部APIなどの重い処理をキャッシュしたいのに、その重い処理が並列に呼ばれてしまうのでは意味がありません。</p>
+
+<p>そこで、複数プロセスから同時に呼ばれないようにすることを考える訳ですが、Elixir の場合はプロセスを使うことになるでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">Agent</span><span class="o">.</span><span class="n">spawn_link</span><span class="p">(</span><span class="k">fn</span> <span class="o">-&gt;</span> <span class="no">nil</span> <span class="k">end</span><span class="p">,</span> <span class="ss">name:</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">Agent</span><span class="o">.</span><span class="n">get_and_update</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span>
+                         <span class="k">fn</span>
+                           <span class="no">nil</span> <span class="o">-&gt;</span> <span class="n">result</span> <span class="o">=</span> <span class="n">load_heavy_data_from_database</span><span class="p">()</span>
+                                  <span class="p">{</span><span class="n">result</span><span class="p">,</span> <span class="n">result</span><span class="p">}</span>
+                           <span class="n">result</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">result</span><span class="p">,</span> <span class="n">result</span><span class="p">}</span>
+                         <span class="k">end</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># どこかで呼んでおく</span>
+<span class="no">Foo</span><span class="o">.</span><span class="n">init</span><span class="p">()</span>
+
+<span class="c1"># 1000プロセスから並列に呼んでいるが、</span>
+<span class="c1"># load_heavy_data_from_database/0 が呼ばれるのは１回だけ</span>
+<span class="n">for</span> <span class="n">_</span> <span class="o">&lt;-</span> <span class="mi">1</span><span class="o">..</span><span class="mi">1000</span> <span class="k">do</span>
+  <span class="no">Process</span><span class="o">.</span><span class="n">spawn</span><span class="p">(</span><span class="k">fn</span> <span class="o">-&gt;</span> <span class="no">Foo</span><span class="o">.</span><span class="n">f</span><span class="p">()</span> <span class="k">end</span><span class="p">,</span> <span class="p">[])</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで無事並列に呼ばれるのを防げるようになりました。<br>
+しかし今度は以下のような問題があります。</p>
+
+<ul>
+<li>最初に <code>Foo.init/0</code> を呼び出しておく必要があるので面倒</li>
+<li>全ての取得がプロセス経由になるので、複数プロセスから取得しようとした時に、このプロセスがネックになる可能性がある</li>
+<li>
+<code>Foo.f/0</code> を呼ばなかった場合は作っておいたプロセスが無駄になる</li>
+<li>排他制御が必要なのは初回呼び出しだけで、以降は必要ないはずなのにプロセスが残り続けている</li>
+<li>作っておいたプロセスがクラッシュした際のハンドリングを考える必要がある</li>
+</ul>
+
+<p>いくつかの問題は頑張れば解決できますが、全て解決するのは厳しいと考えていました。</p>
+
+<p>ETS でトランザクションを使えたり、せめて CAS (compare-and-swap) に相当する操作ができればプロセスを使わなくても実現できるんだけど、と考えていたところで Erlang/OTP 20 のリリースです。</p>
+
+<h2>
+<span id="cas-on-ets" class="fragment"></span><a href="#cas-on-ets"><i class="fa fa-link"></i></a>CAS on ETS</h2>
+
+<p>Erlang/OTP 20 で、<code>:ets.select_replace/2</code> という関数が増えました。<br>
+「条件を満たした要素を、指定した値に置き換える」という関数で、これはもしかして CAS ができるんじゃないかと<a href="http://erlang.org/doc/man/ets.html#select_replace-2" rel="nofollow noopener" target="_blank">ドキュメント</a>を見てみると…</p>
+
+<blockquote>
+<p>A generic single object compare-and-swap operation:</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="p">[</span><span class="nv">Old</span><span class="p">]</span> <span class="o">=</span> <span class="nn">ets</span><span class="p">:</span><span class="nf">lookup</span><span class="p">(</span><span class="nv">T</span><span class="p">,</span> <span class="nv">Key</span><span class="p">),</span>
+<span class="nv">New</span> <span class="o">=</span> <span class="nf">update_object</span><span class="p">(</span><span class="nv">Old</span><span class="p">),</span>
+<span class="nv">Success</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">=:=</span> <span class="nn">ets</span><span class="p">:</span><span class="nf">select_replace</span><span class="p">(</span><span class="nv">T</span><span class="p">,</span> <span class="p">[{</span><span class="nv">Old</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[{</span><span class="n">const</span><span class="p">,</span> <span class="nv">New</span><span class="p">}]}])),</span>
+</pre></div></div>
+</blockquote>
+
+<p>まさにこれです。<br>
+CAS があれば、プロセスを使わなくてもキャッシュが実現できそうです。</p>
+
+<p>ということでプロセスを使わずちゃんと排他しながらキャッシュする機構を実現したのが、以下の <code>memoize</code> です。</p>
+
+<ul>
+<li>Hex: <a href="https://hex.pm/packages/memoize" class="autolink" rel="nofollow noopener" target="_blank">https://hex.pm/packages/memoize</a>
+</li>
+<li>GitHub: <a href="https://github.com/melpon/memoize" class="autolink" rel="nofollow noopener" target="_blank">https://github.com/melpon/memoize</a>
+</li>
+</ul>
+
+<p><code>use Memoize</code> して <code>def</code> を <code>defmemo</code> に置き換えるだけで、関数の結果をキャッシュしてくれます。</p>
+
+<p>例えば、</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Fib</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">fibs</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="mi">0</span>
+  <span class="k">def</span> <span class="n">fibs</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="mi">1</span>
+  <span class="k">def</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>この <code>Fib.fib/1</code> をメモ化したいなら、以下のように変えるだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Fib</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Memoize</span>
+  <span class="n">defmemo</span> <span class="n">fibs</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="mi">0</span>
+  <span class="n">defmemo</span> <span class="n">fibs</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="mi">1</span>
+  <span class="n">defmemo</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="n">fibs</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで自動的に関数呼び出しの結果をキャッシュしてくれます。</p>
+
+<p>他にも一定時間が過ぎたら expire したり、キャッシュを部分的に消したりといった機能もあります。<br>
+詳細は <a href="https://github.com/melpon/memoize/blob/master/README.md" rel="nofollow noopener" target="_blank">ドキュメント</a> を参照して下さい。</p>
+
+<h2>
+<span id="cas-でキャッシュを実現するには" class="fragment"></span><a href="#cas-%E3%81%A7%E3%82%AD%E3%83%A3%E3%83%83%E3%82%B7%E3%83%A5%E3%82%92%E5%AE%9F%E7%8F%BE%E3%81%99%E3%82%8B%E3%81%AB%E3%81%AF"><i class="fa fa-link"></i></a>CAS でキャッシュを実現するには</h2>
+
+<p>CAS でキャッシュしている方法も説明しようと思ったのですが、説明するのが難しいので諦めました。<br>
+気になる方は頑張って <a href="https://github.com/melpon/memoize/blob/master/lib/memoize/cache.ex" rel="nofollow noopener" target="_blank">該当コード</a> を読んで下さい。<br>
+あとバグとか見つけた場合は報告して貰えると大変ありがたいです。</p>

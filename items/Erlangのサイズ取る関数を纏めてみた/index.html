@@ -1,0 +1,51 @@
+<p>Erlang、毎回リストのサイズやバイナリのサイズを調べる時に、何の関数を使えばいいんだっけってググることになるので、ちょっと纏めてみました。</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align: center">データ構造</th>
+<th style="text-align: center">関数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center">リスト <code>[]</code>
+</td>
+<td style="text-align: center"><code>erlang:length/1</code></td>
+</tr>
+<tr>
+<td style="text-align: center">タプル <code>{}</code>
+</td>
+<td style="text-align: center">
+<code>erlang:tuple_size/1</code><br>または<br><code>erlang:size/1</code>
+</td>
+</tr>
+<tr>
+<td style="text-align: center">バイナリ <code>&lt;&lt;&gt;&gt;</code>
+</td>
+<td style="text-align: center">
+<code>erlang:byte_size/1</code><br>または<br><code>erlang:size/1</code>
+</td>
+</tr>
+<tr>
+<td style="text-align: center">マップ <code>%{}</code>
+</td>
+<td style="text-align: center">
+<code>erlang:map_size/1</code><br>または<code>maps:size/1</code>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p>この一貫性の無さすごくない？<sup id="fnref1"><a href="#fn1" rel="footnote" title="具体的にどの辺が一貫性が無いかというと、- リストだけsizeという単語を含まずlengthになっている- タプルとバイナリはerlang:sizeでサイズが取れるのに、リストとマップはerlang:sizeでは取れない- マップはmapsモジュールにサイズ取得関数があるのに、listsやbinaryモジュールには無い">1</a></sup></p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>具体的にどの辺が一貫性が無いかというと、<br>- リストだけsizeという単語を含まずlengthになっている<br>- タプルとバイナリは<code>erlang:size</code>でサイズが取れるのに、リストとマップは<code>erlang:size</code>では取れない<br>- マップは<code>maps</code>モジュールにサイズ取得関数があるのに、<code>lists</code>や<code>binary</code>モジュールには無い <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

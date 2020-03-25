@@ -1,0 +1,199 @@
+<p>スーパーバイザの下にスーパーバイザを作ることはよくあるのですが、毎回定義が面倒なので何とかならないか考えてみた話です。</p>
+
+<p>例えば以下のような構成でスーパーバイザツリーを作りたいとします。</p>
+
+<ul>
+<li>アプリケーションスーパーバイザ(one_for_one)
+
+<ul>
+<li>MyChannelスーパーバイザ(one_for_one)
+
+<ul>
+<li>１つのMyChannelワーカー</li>
+</ul>
+</li>
+<li>Connスーパーバイザ(simple_one_for_one)
+
+<ul>
+<li>沢山の動的に追加されるConnワーカー</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<p><a href="https://hexdocs.pm/elixir/Supervisor.html#module-module-based-supervisors" rel="nofollow noopener" target="_blank">モジュールベースのスーパーバイザ</a> を作れば、一応このスーパーバイザツリーを構築することはできます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Supervisor</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[],</span> <span class="ss">name:</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">Supervisor</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">init</span><span class="p">([</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="p">],</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="no">Supervisor</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Supervisor</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="p">[],</span> <span class="ss">name:</span> <span class="bp">__MODULE__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">Supervisor</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">([])</span> <span class="k">do</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">init</span><span class="p">([</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Conn</span><span class="p">],</span> <span class="ss">strategy:</span> <span class="ss">:simple_one_for_one</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+      <span class="no">MyApp</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+    <span class="p">]</span>
+
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>素直に <code>MyApp.MyChannel.Supervisor</code> と <code>MyApp.Conn.Supervisor</code> を作って、その下にワーカーをぶら下げています。<br>
+子の指定で <a href="https://hexdocs.pm/elixir/Supervisor.Spec.html" rel="nofollow noopener" target="_blank"><code>Supervisor.Spec</code></a> を使っていないのは、Elixir 1.5 で入った <a href="https://qiita.com/melpon/items/bae4105c68f8da50e3c7" id="reference-3d07f6ba2d95d93434eb">合理化された child spec</a> で <em>非推奨</em> になったからです。</p>
+
+<p>ただ、こんな単純なスーパーバイザの為に新しいモジュールを作るのも面倒です。<br>
+何とかならないか考えたところ、以下のように書くことで解決しました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="p">%{</span>
+        <span class="ss">id:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+        <span class="ss">start:</span> <span class="p">{</span>
+          <span class="no">Supervisor</span><span class="p">,</span>
+          <span class="ss">:start_link</span><span class="p">,</span>
+          <span class="p">[</span>
+            <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="p">],</span>
+            <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+          <span class="p">]</span>
+        <span class="p">}</span>
+      <span class="p">},</span>
+      <span class="p">%{</span>
+        <span class="ss">id:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+        <span class="ss">start:</span> <span class="p">{</span>
+          <span class="no">Supervisor</span><span class="p">,</span>
+          <span class="ss">:start_link</span><span class="p">,</span>
+          <span class="p">[</span>
+            <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Conn</span><span class="p">],</span>
+            <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:simple_one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Client</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+          <span class="p">]</span>
+        <span class="p">}</span>
+      <span class="p">},</span>
+    <span class="p">]</span>
+
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>以下詳細です。</p>
+
+<h2>
+<span id="なぜこれで動くのか" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C%E3%81%93%E3%82%8C%E3%81%A7%E5%8B%95%E3%81%8F%E3%81%AE%E3%81%8B"><i class="fa fa-link"></i></a>なぜこれで動くのか</h2>
+
+<p>このコードは、さっきのコードと全く同じ内容でスーパーバイザツリーを構築します。<br>
+というのも、<code>Supervisor</code> モジュールがおおよそ以下のような実装になっているからです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Supervisor</span> <span class="k">do</span>
+  <span class="o">...</span>
+
+  <span class="k">def</span> <span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_list</span><span class="p">(</span><span class="n">children</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="n">sup_opts</span><span class="p">,</span> <span class="n">start_opts</span><span class="p">}</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">options</span><span class="p">,</span> <span class="p">[</span><span class="ss">:strategy</span><span class="p">,</span> <span class="ss">:max_seconds</span><span class="p">,</span> <span class="ss">:max_restarts</span><span class="p">])</span>
+    <span class="n">start_link</span><span class="p">(</span><span class="no">Supervisor</span><span class="o">.</span><span class="no">Default</span><span class="p">,</span> <span class="p">{</span><span class="n">children</span><span class="p">,</span> <span class="n">sup_opts</span><span class="p">},</span> <span class="n">start_opts</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">Supervisor</span><span class="o">.</span><span class="no">Default</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">({</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">})</span> <span class="k">do</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>Supervisor.start_link/2</code> に渡した値が、ほぼそのまま <code>Supervisor.Default.init/1</code> に渡るような実装になっていることが分かります。<br>
+そのため、<code>Supervisor.start_link/2</code> にうまく値を渡せば任意の子を作るスーパーバイザが作れます。</p>
+
+<p>child spec の <code>:start</code> で、起動時に呼び出す MFA を指定するので、<code>%{start: {Supervisor, :start_link, [children, opts]}}</code> と書くことで <code>Supervisor.start_link/2</code> でスーパーバイザを起動できます。<br>
+<code>MyApp.MyChannel.Supervisor.init/1</code> では <code>Supervisor.init([MyApp.MyChannel], strategy: :one_for_one)</code> と書いていたので、<code>children</code> として <code>[MyApp.MyChannel]</code> を、<code>opts</code> として <code>[strategy: :one_for_one]</code> を渡せばいいことが分かります。<br>
+これを合わせると以下のようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">%{</span>
+  <span class="ss">start:</span> <span class="p">{</span>
+    <span class="no">Supervisor</span><span class="p">,</span>
+    <span class="ss">:start_link</span><span class="p">,</span>
+    <span class="p">[</span>
+      <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="p">],</span>
+      <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">]</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">},</span>
+</pre></div></div>
+
+<p>ただし <code>MyApp.MyCannel.Supervisor.start_link/1</code> で <code>:name</code> を指定していたことを忘れてはいけません。<br>
+先程の <code>Supervisor.start_link/2</code> の実装を見れば分かりますが、以下のように書くことで <code>Supervisor.start_link/3</code> の３引数目に <code>:name</code> が渡ります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">%{</span>
+  <span class="ss">start:</span> <span class="p">{</span>
+    <span class="no">Supervisor</span><span class="p">,</span>
+    <span class="ss">:start_link</span><span class="p">,</span>
+    <span class="p">[</span>
+      <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="p">],</span>
+      <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">},</span>
+</pre></div></div>
+
+<p>これで動きそうに見えますが、child spec の ID<sup id="fnref1"><a href="#fn1" rel="footnote" title="child spec の ID は、各プロセスを起動する時に :name で付ける名前とは別です。この ID は１つのスーパーバイザの中で一意であれば良くて、Supervisor.terminate_child/2 とかを呼び出す時に利用します。">1</a></sup> は必須なので、これを指定する必要があります。<br>
+そのため <code>:id</code> も指定してやります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">%{</span>
+  <span class="ss">id:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">,</span>
+  <span class="ss">start:</span> <span class="p">{</span>
+    <span class="no">Supervisor</span><span class="p">,</span>
+    <span class="ss">:start_link</span><span class="p">,</span>
+    <span class="p">[</span>
+      <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="p">],</span>
+      <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">MyChannel</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="p">]</span>
+  <span class="p">}</span>
+<span class="p">},</span>
+</pre></div></div>
+
+<p>これで無事スーパーバイザの下に <code>MyApp.MyChannel.Supervisor</code> をぶら下げることができました。<br>
+同様のことを <code>MyApp.Conn.Supervisor</code> にも適用すれば、最初に紹介したようなコードになります。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>スーパーバイザの下にスーパーバイザをぶら下げるためにモジュールを作るのは結構面倒なのですが、この方法を使えば簡単に構築できます。<br>
+ただ、コードを見てもすぐには理解できなくなってしまうので、どうするかはよく考えた方がいいかもしれません。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>child spec の ID は、各プロセスを起動する時に <code>:name</code> で付ける名前とは別です。この ID は１つのスーパーバイザの中で一意であれば良くて、<a href="https://hexdocs.pm/elixir/Supervisor.html#terminate_child/2" rel="nofollow noopener" target="_blank"><code>Supervisor.terminate_child/2</code></a> とかを呼び出す時に利用します。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

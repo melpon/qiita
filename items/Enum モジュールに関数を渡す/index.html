@@ -1,0 +1,84 @@
+<p>Elixir を使ったことのあるほとんどの人は <a href="https://hexdocs.pm/elixir/Enum.html" rel="nofollow noopener" target="_blank"><code>Enum</code> モジュール</a> を使ったことがあると思います。</p>
+
+<p><code>Enum</code> モジュールに渡す Enumerable な値は、大抵の場合はリストだったりマップだったりといったデータ構造を渡すと思いますが、実はこれ、関数も渡せます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">enum_fun</span><span class="p">(</span><span class="n">acc</span><span class="p">,</span> <span class="n">reducer</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">enum_fun_impl</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">acc</span><span class="p">,</span> <span class="n">reducer</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="p">{</span><span class="ss">:cont</span><span class="p">,</span> <span class="n">acc</span><span class="p">},</span> <span class="n">reducer</span><span class="p">)</span> <span class="ow">when</span> <span class="n">count</span> <span class="o">&lt;</span> <span class="mi">5</span> <span class="k">do</span>
+    <span class="no">Enumerable</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="o">&amp;</span><span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nv">&amp;1</span><span class="p">,</span> <span class="nv">&amp;2</span><span class="p">),</span> <span class="n">reducer</span><span class="o">.</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">acc</span><span class="p">),</span> <span class="n">reducer</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">_count</span><span class="p">,</span> <span class="p">{</span><span class="ss">:cont</span><span class="p">,</span> <span class="n">acc</span><span class="p">},</span> <span class="n">_reducer</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:done</span><span class="p">,</span> <span class="n">acc</span><span class="p">}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># Enumerable として関数を渡す</span>
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">Enum</span><span class="o">.</span><span class="n">to_list</span><span class="p">(</span><span class="o">&amp;</span><span class="no">Foo</span><span class="o">.</span><span class="n">enum_fun</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span>
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="o">&amp;</span><span class="no">Foo</span><span class="o">.</span><span class="n">enum_fun</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="o">&amp;</span><span class="p">(</span><span class="nv">&amp;1</span> <span class="o">*</span> <span class="mi">10</span><span class="p">))</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>[0, 1, 2, 3, 4]
+[0, 10, 20, 30, 40]
+</pre></div></div>
+
+<p>これで動作するのは、Elixir が関数に対して <code>Enumerable</code> プロトコルを実装しているからです。<br>
+<a href="https://github.com/elixir-lang/elixir/blob/v1.5.2/lib/elixir/lib/enum.ex#L3202-L3218" rel="nofollow noopener" target="_blank">ソースを見てみる</a> と、以下の実装になっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defimpl</span> <span class="no">Enumerable</span><span class="p">,</span> <span class="ss">for:</span> <span class="no">Function</span> <span class="k">do</span>
+  <span class="o">...</span>
+
+  <span class="k">def</span> <span class="n">reduce</span><span class="p">(</span><span class="n">function</span><span class="p">,</span> <span class="n">acc</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_function</span><span class="p">(</span><span class="n">function</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="k">do</span><span class="p">:</span> <span class="n">function</span><span class="o">.</span><span class="p">(</span><span class="n">acc</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span>
+
+  <span class="o">...</span>
+</pre></div></div>
+
+<p>すごいシンプルな実装ですが、これを実装するのは結構大変です。<br>
+<code>Enumerable.reduce/3</code> の型情報とか見ながらうまく実装していくことで、<code>Foo.enum_fun/2</code> のような 0 から 4 までの整数を列挙する <code>Enumerable</code> な関数を実装できます。</p>
+
+<p>これをもう少し汎用的にすると、<code>[n, m)</code> な範囲の整数を列挙する関数が作れます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">OreoRange</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">enum</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">&amp;</span><span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">,</span> <span class="nv">&amp;1</span><span class="p">,</span> <span class="nv">&amp;2</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">last</span><span class="p">,</span> <span class="p">{</span><span class="ss">:cont</span><span class="p">,</span> <span class="n">acc</span><span class="p">},</span> <span class="n">reducer</span><span class="p">)</span> <span class="ow">when</span> <span class="n">count</span> <span class="o">&lt;</span> <span class="n">last</span> <span class="k">do</span>
+    <span class="no">Enumerable</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="o">&amp;</span><span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">last</span><span class="p">,</span> <span class="nv">&amp;1</span><span class="p">,</span> <span class="nv">&amp;2</span><span class="p">),</span> <span class="n">reducer</span><span class="o">.</span><span class="p">(</span><span class="n">count</span><span class="p">,</span> <span class="n">acc</span><span class="p">),</span> <span class="n">reducer</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">enum_fun_impl</span><span class="p">(</span><span class="n">_count</span><span class="p">,</span> <span class="n">_last</span><span class="p">,</span> <span class="p">{</span><span class="ss">:cont</span><span class="p">,</span> <span class="n">acc</span><span class="p">},</span> <span class="n">_reducer</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:done</span><span class="p">,</span> <span class="n">acc</span><span class="p">}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">Enum</span><span class="o">.</span><span class="n">to_list</span><span class="p">(</span><span class="no">OreoRange</span><span class="o">.</span><span class="n">enum</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>[10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+</pre></div></div>
+
+<p>リストと違ってメモリ上に置かないので、省メモリで列挙できます。<br>
+ただ、これらは普通に <code>Range</code> を使えばいいだけだし、実際には関数に対する <code>Enumerable</code> プロトコルの実装をユーザが直接利用することはまず無いでしょう。</p>
+
+<p>これが実際何に使われているかというと、<code>Stream</code> や <code>Task</code> の内部実装です。<br>
+例えば <code>Stream.flat_map/2</code> が返すのは <code>Enumerable</code> プロトコルを満たした関数です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">&gt;</span> <span class="n">xs</span> <span class="o">=</span> <span class="no">Stream</span><span class="o">.</span><span class="n">flat_map</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="k">fn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="p">[</span><span class="n">x</span><span class="p">,</span> <span class="n">x</span> <span class="o">*</span> <span class="mi">10</span><span class="p">]</span> <span class="k">end</span><span class="p">)</span>
+<span class="c1">#Function&lt;58.40091930/2 in Stream.transform/3&gt;</span>
+</pre></div></div>
+
+<p><code>Stream.flat_map/2</code> の戻り値が関数になっていることが分かります。<br>
+この関数は <code>Enumerable</code> プロトコルを満たしているため、これを <code>Enum.to_list/1</code> に渡すと正常にリストに変換できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">&gt;</span> <span class="no">Enum</span><span class="o">.</span><span class="n">to_list</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span>
+<span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">30</span><span class="p">]</span>
+</pre></div></div>
+
+<p>ということで、<code>Stream</code> モジュールが返す値がなぜか関数になっていても焦らず、とりあえず <code>Enum.to_list/1</code> 等に入れてみて <code>Enumerable</code> として動作するかを確認するのがいいでしょう。</p>

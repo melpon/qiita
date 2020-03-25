@@ -1,0 +1,158 @@
+<p>アプリケーションを終了させる時に呼ばれるコールバック関数 <code>stop/1</code> で <code>application:stop/1</code> を呼び出してはいけません。</p>
+
+<h2>
+<span id="動機" class="fragment"></span><a href="#%E5%8B%95%E6%A9%9F"><i class="fa fa-link"></i></a>動機</h2>
+
+<p>自身のアプリケーションを終了させる時、他のアプリケーションも終了させてから終わったほうが綺麗にシャットダウンできるかなと思って、以下のようなコードを書きました。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">myapp_app.erl</span></div>
+<div class="highlight"><pre><span class="p">-</span><span class="ni">module</span><span class="p">(</span><span class="n">myapp_app</span><span class="p">).</span>
+
+<span class="p">-</span><span class="ni">behaviour</span><span class="p">(</span><span class="n">application</span><span class="p">).</span>
+
+<span class="p">...</span>
+
+<span class="p">-</span><span class="ni">spec</span> <span class="nf">stop</span><span class="p">(_)</span> <span class="o">-&gt;</span> <span class="n">ok</span><span class="p">.</span>
+<span class="nf">stop</span><span class="p">(_</span><span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">application</span><span class="p">:</span><span class="nf">stop</span><span class="p">(</span><span class="n">cowboy</span><span class="p">),</span>
+    <span class="nn">application</span><span class="p">:</span><span class="nf">stop</span><span class="p">(</span><span class="n">hackney</span><span class="p">),</span>
+    <span class="c">%% その他起動してるアプリケーションを終了する
+</span>    <span class="n">ok</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<h2>
+<span id="何が起きるか" class="fragment"></span><a href="#%E4%BD%95%E3%81%8C%E8%B5%B7%E3%81%8D%E3%82%8B%E3%81%8B"><i class="fa fa-link"></i></a>何が起きるか</h2>
+
+<p><strong>終了しない</strong></p>
+
+<h2>
+<span id="何が起きているか" class="fragment"></span><a href="#%E4%BD%95%E3%81%8C%E8%B5%B7%E3%81%8D%E3%81%A6%E3%81%84%E3%82%8B%E3%81%8B"><i class="fa fa-link"></i></a>何が起きているか</h2>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application.erl</span></div>
+<div class="highlight"><pre><span class="nf">stop</span><span class="p">(</span><span class="nv">Application</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">application_controller</span><span class="p">:</span><span class="nf">stop_application</span><span class="p">(</span><span class="nv">Application</span><span class="p">).</span>
+</pre></div>
+</div>
+
+<p><code>application:stop/1</code> は <code>application_controller:stop_application/1</code> を呼んでいるだけです。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_controller.erl</span></div>
+<div class="highlight"><pre><span class="nf">stop_application</span><span class="p">(</span><span class="nv">AppName</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="nf">call</span><span class="p">(</span><span class="o">?</span><span class="nv">AC</span><span class="p">,</span> <span class="p">{</span><span class="n">stop_application</span><span class="p">,</span> <span class="nv">AppName</span><span class="p">},</span> <span class="n">infinity</span><span class="p">).</span>
+</pre></div>
+</div>
+
+<p>複数のアプリケーションを纏めているアプリケーションコントローラに <code>gen_server:call/3</code>、しかも <code>infinity</code> で同期呼び出しをしています。<br>
+この時点で大分嫌な予感がしますね。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_controller.erl</span></div>
+<div class="highlight"><pre><span class="nf">handle_call</span><span class="p">({</span><span class="n">stop_application</span><span class="p">,</span> <span class="nv">AppName</span><span class="p">},</span> <span class="p">_</span><span class="nv">From</span><span class="p">,</span> <span class="nv">S</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">...</span>
+    <span class="nf">stop_appl</span><span class="p">(</span><span class="nv">AppName</span><span class="p">,</span> <span class="nv">Id</span><span class="p">,</span> <span class="nv">Type</span><span class="p">),</span>
+    <span class="p">...</span>
+</pre></div>
+</div>
+
+<p><code>stop_appl/3</code> を呼び出し…</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_controller.erl</span></div>
+<div class="highlight"><pre><span class="nf">stop_appl</span><span class="p">(</span><span class="nv">AppName</span><span class="p">,</span> <span class="nv">Id</span><span class="p">,</span> <span class="nv">Type</span><span class="p">)</span> <span class="k">when</span> <span class="nb">is_pid</span><span class="p">(</span><span class="nv">Id</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="p">...</span>
+    <span class="nn">application_master</span><span class="p">:</span><span class="nf">stop</span><span class="p">(</span><span class="nv">Id</span><span class="p">),</span>
+    <span class="p">...</span>
+</pre></div>
+</div>
+
+<p>アプリケーションごとに存在するアプリケーションマスターの <code>application_master:stop/1</code> を呼び出し…</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_master.erl</span></div>
+<div class="highlight"><pre><span class="nf">stop</span><span class="p">(</span><span class="nv">AppMaster</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nf">call</span><span class="p">(</span><span class="nv">AppMaster</span><span class="p">,</span> <span class="n">stop</span><span class="p">).</span>
+
+<span class="nf">call</span><span class="p">(</span><span class="nv">AppMaster</span><span class="p">,</span> <span class="nv">Req</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Tag</span> <span class="o">=</span> <span class="nf">make_ref</span><span class="p">(),</span>
+    <span class="nv">Ref</span> <span class="o">=</span> <span class="nn">erlang</span><span class="p">:</span><span class="nb">monitor</span><span class="p">(</span><span class="n">process</span><span class="p">,</span> <span class="nv">AppMaster</span><span class="p">),</span>
+    <span class="nv">AppMaster</span> <span class="o">!</span> <span class="p">{</span><span class="nv">Req</span><span class="p">,</span> <span class="nv">Tag</span><span class="p">,</span> <span class="nf">self</span><span class="p">()},</span>
+    <span class="k">receive</span> 
+        <span class="p">{</span><span class="n">'DOWN'</span><span class="p">,</span> <span class="nv">Ref</span><span class="p">,</span> <span class="n">process</span><span class="p">,</span> <span class="p">_,</span> <span class="p">_</span><span class="nv">Info</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="n">ok</span><span class="p">;</span>
+        <span class="p">{</span><span class="nv">Tag</span><span class="p">,</span> <span class="nv">Res</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="nn">erlang</span><span class="p">:</span><span class="nb">demonitor</span><span class="p">(</span><span class="nv">Ref</span><span class="p">,</span> <span class="p">[</span><span class="n">flush</span><span class="p">]),</span>
+            <span class="nv">Res</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<p><code>AppMaster</code>にメッセージパッシングしていますが、その直後に <code>receive</code> しているのでこれは同期処理です。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_master.erl</span></div>
+<div class="highlight"><pre><span class="nf">handle_msg</span><span class="p">({</span><span class="n">stop</span><span class="p">,</span> <span class="nv">Tag</span><span class="p">,</span> <span class="nv">From</span><span class="p">},</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">catch</span> <span class="nf">terminate</span><span class="p">(</span><span class="n">normal</span><span class="p">,</span> <span class="nv">State</span><span class="p">),</span>
+    <span class="p">...</span>
+
+<span class="nf">terminate</span><span class="p">(</span><span class="nv">Reason</span><span class="p">,</span> <span class="nv">State</span> <span class="o">=</span> <span class="nl">#state</span><span class="p">{</span><span class="n">child</span><span class="o">=</span><span class="nv">Child</span><span class="p">,</span> <span class="n">children</span><span class="o">=</span><span class="nv">Children</span><span class="p">,</span> <span class="n">req</span><span class="o">=</span><span class="nv">Reqs</span><span class="p">})</span> <span class="o">-&gt;</span>
+    <span class="p">...</span>
+    <span class="nf">terminate_child</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">),</span>
+    <span class="p">...</span>
+
+<span class="nf">terminate_child</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nf">terminate_child_i</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">).</span>
+
+<span class="nf">terminate_child_i</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Child</span> <span class="o">!</span> <span class="p">{</span><span class="nf">self</span><span class="p">(),</span> <span class="n">terminate</span><span class="p">},</span>
+    <span class="nf">terminate_loop</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">).</span>
+
+<span class="nf">terminate_loop</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">receive</span>
+        <span class="nv">IoReq</span> <span class="k">when</span> <span class="nb">element</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nv">IoReq</span><span class="p">)</span> <span class="o">=:=</span> <span class="n">io_request</span> <span class="o">-&gt;</span>
+            <span class="nv">State</span><span class="nl">#state.gleader</span> <span class="o">!</span> <span class="nv">IoReq</span><span class="p">,</span>
+            <span class="nf">terminate_loop</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">State</span><span class="p">);</span>
+        <span class="p">{</span><span class="n">'EXIT'</span><span class="p">,</span> <span class="nv">Child</span><span class="p">,</span> <span class="p">_}</span> <span class="o">-&gt;</span>
+            <span class="n">ok</span><span class="p">;</span>
+        <span class="nv">Other</span> <span class="o">-&gt;</span>
+            <span class="nv">NewState</span> <span class="o">=</span> <span class="nf">handle_msg</span><span class="p">(</span><span class="nv">Other</span><span class="p">,</span> <span class="nv">State</span><span class="p">),</span>
+            <span class="nf">terminate_loop</span><span class="p">(</span><span class="nv">Child</span><span class="p">,</span> <span class="nv">NewState</span><span class="p">)</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<p><code>terminate_child_i/2</code> で <code>Child ! {self(), terminate}</code> していますが、その直後 <code>terminate_loop/2</code> で <code>receive</code> しているため、これも同期処理です。</p>
+
+<div class="code-frame" data-lang="erlang">
+<div class="code-lang"><span class="bold">application_master.erl</span></div>
+<div class="highlight"><pre><span class="nf">loop_it</span><span class="p">(</span><span class="nv">Parent</span><span class="p">,</span> <span class="nv">Child</span><span class="p">,</span> <span class="nv">Mod</span><span class="p">,</span> <span class="nv">AppState</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="k">receive</span>
+        <span class="p">...</span>
+        <span class="p">{</span><span class="nv">Parent</span><span class="p">,</span> <span class="n">terminate</span><span class="p">}</span> <span class="o">-&gt;</span>
+            <span class="p">...</span>
+            <span class="k">catch</span> <span class="nv">Mod</span><span class="p">:</span><span class="nf">stop</span><span class="p">(</span><span class="nv">NewAppState</span><span class="p">),</span>
+            <span class="nb">exit</span><span class="p">(</span><span class="n">normal</span><span class="p">);</span>
+        <span class="p">...</span>
+    <span class="k">end</span><span class="p">.</span>
+</pre></div>
+</div>
+
+<p>そしてここで　<code>Mod:stop/1</code> を呼び出しています。<br>
+これが最初に書いた <code>application</code> ビヘイビアの <code>stop/1</code> のコールバックになります。</p>
+
+<p>どれも全部同期処理であり、アプリケーションコントローラは <code>Mod:stop/1</code> の処理が終わるのを待っています。<br>
+で、その中で更に <code>application:stop/1</code> を呼び出すと、アプリケーションコントローラは既に <code>Mod:stop/1</code> を待っている状態なので、<strong>デッドロック</strong> が発生し、永遠に待ち続けることになります。</p>
+
+<h2>
+<span id="教訓" class="fragment"></span><a href="#%E6%95%99%E8%A8%93"><i class="fa fa-link"></i></a>教訓</h2>
+
+<p><code>stop/1</code> の中では自分のアプリケーションを終わらせることに注力しましょう。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://github.com/erlang/otp/tree/maint/lib/kernel/src" rel="nofollow noopener" target="_blank">otp/lib/kernel/src at maint · erlang/otp</a></li>
+</ul>

@@ -1,0 +1,75 @@
+<p>Elixir には Range 型があります。<br>
+これは <code>1..3</code> とか <code>Range.new(1, 3)</code> とか書くと生成できて、<code>Enumerable</code> プロトコルを実装してるので <code>for</code> で回せます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">for</span> <span class="n">n</span> <span class="o">&lt;-</span> <span class="mi">1</span><span class="o">..</span><span class="mi">3</span> <span class="k">do</span>
+<span class="o">...&gt;</span>   <span class="n">n</span> <span class="o">*</span> <span class="mi">2</span>
+<span class="o">...&gt;</span> <span class="k">end</span>
+<span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">]</span>
+</pre></div></div>
+
+<p>範囲を扱う場合、大体の言語で終端の値を含むか含まないかでいろいろあるのですが、Elixir の場合、<code>1..3</code> は <code>3</code> を含みます。</p>
+
+<p>また、Elixir は <code>3..1</code> なんかすると 3 から始まり 1 までの範囲を表します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="no">Enum</span><span class="o">.</span><span class="n">to_list</span><span class="p">(</span><span class="mi">3</span><span class="o">..</span><span class="mi">1</span><span class="p">)</span>
+<span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+</pre></div></div>
+
+<p>どちらも問題無さそうな機能に見えますが、自分はこの２つの仕様が合わさるのは良くないと考えています。<br>
+なぜなら <strong>空の範囲が表現できなくなる</strong> からです。<br>
+<code>1..1</code> は 1 だけの範囲だし、<code>1..0</code> は 1 と 0 の範囲です。空の範囲が表現できません。<sup id="fnref1"><a href="#fn1" rel="footnote" title="当然空の範囲が欲しいという話は一度 議論 されているのだけど、結局入らないまま。">1</a></sup></p>
+
+<p>これが実際どういう時に問題になるかというと、例えばマクロで使うために <code>t1</code> から <code>tn</code> までの <code>n</code> 個の引数リストを作りたい場合、</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">make_args</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">for</span> <span class="n">v</span> <span class="o">&lt;-</span> <span class="mi">1</span><span class="o">..</span><span class="n">n</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:"t</span><span class="si">#{</span><span class="n">v</span><span class="si">}</span><span class="ss">"</span><span class="p">,</span> <span class="p">[],</span> <span class="no">Elixir</span><span class="p">}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>とか書くわけですが、これだと <code>make_args(0)</code> と呼び出した時に意図した動作にはなりません。<br>
+本来は <code>[]</code> が返されて欲しいのですが、<code>1..0</code> が <code>1, 0</code> となってしまうため、<code>t1</code> と <code>t0</code> の引数リストが返されることになります。</p>
+
+<p>なので以下のように書く必要があります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">make_args</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">do</span>
+  <span class="p">[]</span>
+<span class="k">end</span>
+
+<span class="k">def</span> <span class="n">make_args</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">for</span> <span class="n">v</span> <span class="o">&lt;-</span> <span class="mi">1</span><span class="o">..</span><span class="n">n</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:"t</span><span class="si">#{</span><span class="n">v</span><span class="si">}</span><span class="ss">"</span><span class="p">,</span> <span class="p">[],</span> <span class="no">Elixir</span><span class="p">}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>あるいは <a href="http://erlang.org/doc/man/lists.html#seq-2" rel="nofollow noopener" target="_blank"><code>:lists.seq/2</code></a> を使うという手もあります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">make_args</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">for</span> <span class="n">v</span> <span class="o">&lt;-</span> <span class="ss">:lists</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:"t</span><span class="si">#{</span><span class="n">v</span><span class="si">}</span><span class="ss">"</span><span class="p">,</span> <span class="p">[],</span> <span class="no">Elixir</span><span class="p">}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>1..0</code> と違い、<code>:lists.seq(1, 0)</code> の場合は空のリストを返すため、これで正しく動作します。<sup id="fnref2"><a href="#fn2" rel="footnote" title=":lists.seq/2 を見ると、なぜ 1..0 はマイナス方向に進む仕様にしてしまったのかという気持ちで一杯になる。">2</a></sup></p>
+
+<p>このように、n 回処理をする、という内容で n が 0 のケースがある場合には <code>:lists.seq/2</code> を使うのが無難そうです。<br>
+ただし n が膨大な数になる場合には <code>:lists.seq/2</code> を使うのは危険なので、その場合は分岐が必要になります。<br>
+この使い分けはかなり疲れそうなので、やっぱり空の範囲が欲しいですね。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>当然空の範囲が欲しいという話は一度 <a href="https://github.com/elixir-lang/elixir/issues/1017" rel="nofollow noopener" target="_blank">議論</a> されているのだけど、結局入らないまま。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><code>:lists.seq/2</code> を見ると、なぜ <code>1..0</code> はマイナス方向に進む仕様にしてしまったのかという気持ちで一杯になる。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

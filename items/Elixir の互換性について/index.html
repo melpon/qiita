@@ -1,0 +1,58 @@
+<p>Elixir は割と互換性を大事にしている言語で、古い機能が割とずっと残っていたりします。</p>
+
+<p>例えば <a href="https://hexdocs.pm/elixir/HashDict.html" rel="nofollow noopener" target="_blank">HashDict</a> は Elixir 1.4 で deprecated（非推奨）の警告が出るようになりましたが、まだ削除されていません。<br>
+例えば Elixir 1.3 まで <a href="https://hexdocs.pm/elixir/1.3.0/Enum.html#partition/2" rel="nofollow noopener" target="_blank"><code>Enum.partition/2</code></a> という関数があったのですが、Elixir 1.4 ではひっそりとドキュメントから消されています。しかし今でも呼び出すことが出来るし、deprecated の警告も出ません。</p>
+
+<p>これらの機能が、いつから deprecated の警告が出て、いつまで残っているのか気になるところです。</p>
+
+<h2>
+<span id="互換性のポリシー" class="fragment"></span><a href="#%E4%BA%92%E6%8F%9B%E6%80%A7%E3%81%AE%E3%83%9D%E3%83%AA%E3%82%B7%E3%83%BC"><i class="fa fa-link"></i></a>互換性のポリシー</h2>
+
+<p>答えは、公式のドキュメント <a href="https://hexdocs.pm/elixir/deprecations.html" rel="nofollow noopener" target="_blank">Deprecations</a> に書いています。</p>
+
+<p>それによると、Elixir の deprecated や削除の方針は以下のようになっています。</p>
+
+<ul>
+<li>消したい機能があった時、まず soft deprecated 状態にする。CHANGELOG やドキュメントに deprecated の記述をしたり、ドキュメントから削除したりするが、これらの関数やモジュールを利用する時には <strong>警告を出さない</strong> 。</li>
+<li>代替機能を用意してから <strong>最低でも２マイナーバージョン</strong> 経過した後に deprecated にする。これらの関数やモジュールを利用する時に <strong>警告を出す</strong> 。</li>
+<li>
+<strong>メジャーバージョンを上げる時</strong> に、deprecated になっている機能を消す。つまり今 deprecated になっている機能は Elixir 2.0 で消える。</li>
+</ul>
+
+<p>つまり Elixir 1.5 の <code>HashDict</code> で deprecated の警告が出るのは、Elixir 1.2 で <code>Map</code> という代替機能が追加されて soft deprecated になり、２マイナーバージョンが経過した Elixir 1.4 以降になっているからです。<br>
+また <code>Enum.partition/2</code> で警告が出ないのは、Elixir 1.4 で <code>Enum.split_with/2</code> という代替機能が追加されて soft deprecated になり、Elixir 1.5 の時点ではまだ２マイナーバージョンが経過していなくて deprecated になっていないからです。つまり <code>Enum.partition/2</code> は Elixir 1.6 で deprecated になり、警告が出るようになります。<sup id="fnref1"><a href="#fn1" rel="footnote" title="しかし Supervisor.Spec が deprecated （あるいは soft deprecated）になってるのに、そのことが CHANGELOG にも書かれていないし警告も出ないことだけがよく分からない。">1</a></sup></p>
+
+<p>また、これらの機能は Elixir 2.0 で削除されます。<br>
+逆に言えば、ドキュメントから消えたり deprecated 警告が出るものの、Elixir 2.0 までは残っていることが保証されています。</p>
+
+<h2>
+<span id="soft-deprecated-が存在する理由" class="fragment"></span><a href="#soft-deprecated-%E3%81%8C%E5%AD%98%E5%9C%A8%E3%81%99%E3%82%8B%E7%90%86%E7%94%B1"><i class="fa fa-link"></i></a>soft deprecated が存在する理由</h2>
+
+<p>ユーザは、わざわざ CHANGELOG を見たりしないし、書いているモジュールのドキュメントを見に行ったりしまません。<br>
+ユーザが気がつくのは deprecated 状態になって警告が出てきてからでしょう。<br>
+それなのにわざわざ soft deprecated 状態を用意している理由はなぜでしょうか。</p>
+
+<p>これはただの予想ですが、多分警告を除けた時に古いバージョンが動かなくなるのを防ぐためだと思います。</p>
+
+<p>例えば Elixir 1.5 から <code>Atom.to_char_list/1</code> や <code>Integer.to_char_list/1</code> といった <code>.*char_list.*</code> 系の関数や atom が全て <code>.*charlist.*</code> になりました。<br>
+これによって多くのライブラリが警告を出すようになったのですが、だからといってすぐに直すと、Elixir 1.4 で動かなくなりそうだから直さない、といったことがあるかもしれません。</p>
+
+<p>しかし、<code>.*charlist.*</code> 周りの実装は、実は Elixir 1.3 から入っています。つまり警告が出た時点ですぐ直しても、<strong>過去２マイナーバージョンで動作する</strong> ことが保証されているのです。<br>
+こういう理由で入れてるとしたら、soft deprecated はよく出来た仕組みだなぁと思います。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>このように、Elixir は互換性をかなり大事にしています。<br>
+Elixir 2.0 までは、古いコードでも割と動くと思うので、安心して利用しましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>しかし <a href="https://hexdocs.pm/elixir/Supervisor.Spec.html" rel="nofollow noopener" target="_blank"><code>Supervisor.Spec</code></a> が deprecated （あるいは soft deprecated）になってるのに、そのことが CHANGELOG にも書かれていないし警告も出ないことだけがよく分からない。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,236 @@
+<p>Elixirのマクロ、便利ですよね。<br>
+使ってますか？使ってる？じゃあ今すぐ <strong>使うのをやめろ</strong>。</p>
+
+<h1>
+<span id="マクロの良くない点" class="fragment"></span><a href="#%E3%83%9E%E3%82%AF%E3%83%AD%E3%81%AE%E8%89%AF%E3%81%8F%E3%81%AA%E3%81%84%E7%82%B9"><i class="fa fa-link"></i></a>マクロの良くない点</h1>
+
+<p>一言で言えば <strong>何が起きるか想像できない</strong> という点に付きる。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="p">,</span> <span class="ss">:router</span>
+
+  <span class="n">pipeline</span> <span class="ss">:browser</span> <span class="k">do</span>
+    <span class="n">plug</span> <span class="ss">:accepts</span><span class="p">,</span> <span class="p">[</span><span class="s2">"html"</span><span class="p">]</span>
+    <span class="n">plug</span> <span class="ss">:fetch_session</span>
+    <span class="n">plug</span> <span class="ss">:fetch_flash</span>
+    <span class="n">plug</span> <span class="ss">:protect_from_forgery</span>
+    <span class="n">plug</span> <span class="ss">:put_secure_browser_headers</span>
+  <span class="k">end</span>
+
+  <span class="n">pipeline</span> <span class="ss">:api</span> <span class="k">do</span>
+    <span class="n">plug</span> <span class="ss">:accepts</span><span class="p">,</span> <span class="p">[</span><span class="s2">"json"</span><span class="p">]</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>こういう <code>pipeline</code> マクロと <code>plug</code> マクロの呼び出しがある時、これによって何が起きるか想像できるだろうか。<br>
+何かのモジュールを <code>import</code> しているかもしれないし、何らかの attribute を定義してるかもしれないし、便利で汎用的な関数を定義しているかもしれない。</p>
+
+<p>もしこんなマクロがある場合、そのモジュール内で別の関数を定義する際に以下のことを考える必要がある。</p>
+
+<ul>
+<li>自動で定義された関数と名前が被っていないか</li>
+<li>自動で定義された関数の中で使っている関数名と名前が被っていないか</li>
+<li>自動で定義された便利で汎用的な関数と同じような機能を提供してしまっていないか</li>
+</ul>
+
+<p>例え <strong><code>pipeline</code> や <code>plug</code> とは全く無関係と思われる関数を書く場合であっても</strong> 一度は上記のことを確認しておく必要がある。<br>
+そしてマクロのコードは <strong>とても読みづらい</strong> ので、無関係な関数を書くために大量の時間を使うことになる。</p>
+
+<p>もしこれが、以下の様な定義だったらどうだろう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="nv">@behaviour</span> <span class="no">Pipeline</span>
+
+  <span class="k">def</span> <span class="n">pipelines</span><span class="p">()</span> <span class="k">do</span>
+    <span class="p">[</span><span class="ss">browser:</span> <span class="p">[{</span><span class="ss">:accepts</span><span class="p">,</span> <span class="p">[</span><span class="s2">"html"</span><span class="p">]},</span>
+               <span class="ss">:fetch_session</span><span class="p">,</span>
+               <span class="ss">:fetch_flash</span><span class="p">,</span>
+               <span class="ss">:protect_from_forgery</span><span class="p">,</span>
+               <span class="ss">:put_secure_browser_headers</span><span class="p">],</span>
+     <span class="ss">api:</span> <span class="p">[{</span><span class="ss">:accepts</span><span class="p">,</span> <span class="p">[</span><span class="s2">"json"</span><span class="p">]}]]</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>こう書いておけば、このモジュールで他の関数を定義する際に考えることは、「<code>pipelines/0</code> 関数を定義してはいけない」ということだけである。<br>
+例え <strong><code>pipelines/0</code> が何のために使われているのか分からなくても</strong>、それだけ考えれば良い。</p>
+
+<p><a href="http://elixir-lang.org/getting-started/meta/macros.html#foreword" rel="nofollow noopener" target="_blank">Macroのドキュメント</a> にも、以下の様に書かれている。</p>
+
+<blockquote>
+<p>Elixir already provides mechanisms to write your every day code in a simple and readable fashion by using its data structures and functions. Macros should only be used as a last resort. Remember that <strong>explicit is better than implicit</strong>. <strong>Clear code is better than concise code</strong>.</p>
+</blockquote>
+
+<p>要約すると「Elixir はマクロを使わなくても何とかなる機能を提供している。マクロは最後の手段として使うべきだ。<strong>暗黙より明示</strong>を、<strong>簡潔なコードより明確なコード</strong>を。」という感じだ。</p>
+
+<p>「マクロを使わなくても何とかなる機能を提供している」は大嘘だと思っている（この記事の後半部分）が、マクロが最後の手段というのはほんとにそうだし、みんな気軽にマクロを使い過ぎだと思う。</p>
+
+<h1>
+<span id="useは死ぬべき" class="fragment"></span><a href="#use%E3%81%AF%E6%AD%BB%E3%81%AC%E3%81%B9%E3%81%8D"><i class="fa fa-link"></i></a><code>use</code>は死ぬべき</h1>
+
+<p><code>use</code> は、<code>require</code> してから <code>__using__/1</code> マクロを呼び出すだけの機能なので、マクロが良くない存在だから当然 <code>use</code> も良くない。<br>
+ただ <code>use</code> は正直 <strong>マクロより質が悪い</strong> 。</p>
+
+<p><code>use</code> は当然マクロなので <strong>何でもできる</strong>。<br>
+<code>use</code> は様々な用途に使われていて、自分が調べた限り、<code>use</code> で提供している機能は以下の様なものがある。</p>
+
+<h2>
+<span id="ミックスイン" class="fragment"></span><a href="#%E3%83%9F%E3%83%83%E3%82%AF%E3%82%B9%E3%82%A4%E3%83%B3"><i class="fa fa-link"></i></a>ミックスイン</h2>
+
+<p>便利な関数や attribute をそのモジュールに埋め込む。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">AutoSource</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="nv">@source</span> <span class="bp">__MODULE__</span>  <span class="o">|&gt;</span> <span class="no">Macro</span><span class="o">.</span><span class="n">underscore</span><span class="p">()</span> <span class="o">|&gt;</span> <span class="no">String</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="n">module_to_source</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span> <span class="k">do</span>
+      <span class="n">mod</span> <span class="o">|&gt;</span> <span class="no">Macro</span><span class="o">.</span><span class="n">underscore</span><span class="p">()</span> <span class="o">|&gt;</span> <span class="no">String</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h2>
+<span id="behaviour-のデフォルト実装" class="fragment"></span><a href="#behaviour-%E3%81%AE%E3%83%87%E3%83%95%E3%82%A9%E3%83%AB%E3%83%88%E5%AE%9F%E8%A3%85"><i class="fa fa-link"></i></a><code>@behaviour</code> のデフォルト実装</h2>
+
+<p>これは例えば <a href="https://hexdocs.pm/elixir/GenServer.html" rel="nofollow noopener" target="_blank"><code>GenServer</code></a> でこの機能が使われている。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">GenServer</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="ss">location:</span> <span class="ss">:keep</span> <span class="k">do</span>
+      <span class="nv">@behaviour</span> <span class="no">GenServer</span>
+
+      <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="k">do</span>
+        <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">args</span><span class="p">}</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="n">handle_call</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">_from</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span> <span class="k">do</span>
+        <span class="o">...</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="n">handle_info</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span> <span class="k">do</span>
+        <span class="o">...</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="n">handle_cast</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="p">)</span> <span class="k">do</span>
+        <span class="o">...</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="n">terminate</span><span class="p">(</span><span class="n">_reason</span><span class="p">,</span> <span class="n">_state</span><span class="p">)</span> <span class="k">do</span>
+        <span class="ss">:ok</span>
+      <span class="k">end</span>
+
+      <span class="k">def</span> <span class="n">code_change</span><span class="p">(</span><span class="n">_old</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">_extra</span><span class="p">)</span> <span class="k">do</span>
+        <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">state</span><span class="p">}</span>
+      <span class="k">end</span>
+
+      <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">init:</span> <span class="mi">1</span><span class="p">,</span> <span class="ss">handle_call:</span> <span class="mi">3</span><span class="p">,</span> <span class="ss">handle_info:</span> <span class="mi">2</span><span class="p">,</span>
+                      <span class="ss">handle_cast:</span> <span class="mi">2</span><span class="p">,</span> <span class="ss">terminate:</span> <span class="mi">2</span><span class="p">,</span> <span class="ss">code_change:</span> <span class="mi">3</span><span class="p">]</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h2>
+<span id="定数バインディング" class="fragment"></span><a href="#%E5%AE%9A%E6%95%B0%E3%83%90%E3%82%A4%E3%83%B3%E3%83%87%E3%82%A3%E3%83%B3%E3%82%B0"><i class="fa fa-link"></i></a>定数バインディング</h2>
+
+<p>コンパイル時に定数になる値をバインドして、少ない引数で呼べるようにする。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MigrationRouter</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">allow_migrate</span><span class="p">(</span><span class="n">app</span><span class="p">,</span> <span class="n">schema</span><span class="p">,</span> <span class="n">repo</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="ss">bind_quoted:</span> <span class="p">[</span><span class="ss">opts:</span> <span class="n">opts</span><span class="p">]</span> <span class="k">do</span>
+      <span class="n">otp_app</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:otp_app</span><span class="p">)</span>
+      <span class="nv">@otp_app</span> <span class="n">otp_app</span>
+
+      <span class="k">def</span> <span class="n">allow_migrate</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">repo</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+        <span class="no">MigrationRouter</span><span class="o">.</span><span class="n">allow_migrate</span><span class="p">(</span><span class="nv">@otp_app</span><span class="p">,</span> <span class="n">schema</span><span class="p">,</span> <span class="n">repo</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyRouter</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">MigrationRouter</span><span class="p">,</span> <span class="ss">otp_app:</span> <span class="ss">:my_app</span>
+<span class="k">end</span>
+
+<span class="c1"># MigrationRouterを使うなら4引数渡さないといけないところを…</span>
+<span class="no">MigrationRouter</span><span class="o">.</span><span class="n">allow_migrate</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="no">MySchema</span><span class="p">,</span> <span class="no">MyRepo</span><span class="p">,</span> <span class="p">[])</span>
+
+<span class="c1"># MyRouterを使えば3引数で済む</span>
+<span class="no">MyRouter</span><span class="o">.</span><span class="n">allow_migrate</span><span class="p">(</span><span class="no">MySchema</span><span class="p">,</span> <span class="no">MyRepo</span><span class="p">,</span> <span class="p">[])</span>
+</pre></div></div>
+
+<h2>
+<span id="コード生成" class="fragment"></span><a href="#%E3%82%B3%E3%83%BC%E3%83%89%E7%94%9F%E6%88%90"><i class="fa fa-link"></i></a>コード生成</h2>
+
+<p>ミックスインと似ているが、もっと複雑なDSL(domain-specific language)を用意して、それらの値を使ってめちゃめちゃ頑張ったコードを生成する。</p>
+
+<p>これは <a href="http://qiita.com/melpon/items/b9a712e784e7b9919ce6" id="reference-37a172b0a12a473b9930">Phoenixのルーティング</a> や <a href="http://qiita.com/melpon/items/9530c52ab1350acb4409" id="reference-a77bb162fb9a294988d2">Phoenixのコントローラ</a> にあるようなコードのことである。</p>
+
+<h2>
+<span id="requireやimportをまとめて呼び出す" class="fragment"></span><a href="#require%E3%82%84import%E3%82%92%E3%81%BE%E3%81%A8%E3%82%81%E3%81%A6%E5%91%BC%E3%81%B3%E5%87%BA%E3%81%99"><i class="fa fa-link"></i></a><code>require</code>や<code>import</code>をまとめて呼び出す</h2>
+
+<p>こういう感じの機能のこと。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="o">.</span><span class="no">Controller</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">__using__</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+      <span class="n">alias</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Repo</span>
+      <span class="kn">import</span> <span class="no">Ecto</span>
+      <span class="kn">import</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Query</span>
+
+      <span class="kn">import</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span><span class="o">.</span><span class="no">Helpers</span>
+      <span class="kn">import</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Gettext</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+</pre></div></div>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Web</span><span class="o">.</span><span class="no">Controller</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<hr>
+
+<p>多分他にも <code>use</code> で提供している機能はあると思う。</p>
+
+<p><code>use Foo</code> という１行から、どういう動作をするのか全く想像がつかないし、何か１つ関数や attribute を定義しようと思ったときには、そこと影響が無いかを <code>__using__/1</code> を見に行かないと安心できない。<sup id="fnref1"><a href="#fn1" rel="footnote" title="ドキュメントを読めばいいと思うかもしれないけど、ドキュメントには「こう使うものだよ」とは書いているが、「この名前の関数と attribute が定義されるし、このモジュールをimportしているし、定義した関数内でこの関数を使っているよ」ということまでは書いてくれているのは見たことが無い">1</a></sup></p>
+
+<p>しかもこれらの機能は <strong>組み合わせて提供される</strong> し、<strong>一部の機能だけを利用することができない</strong><sup id="fnref2"><a href="#fn2" rel="footnote" title="提供者側がうまいこと書いていれば一部だけ使うように選択できるが、そんな親切な __using__/1 は見たことが無い">2</a></sup>。オール・オア・ナッシングである。<sup id="fnref3"><a href="#fn3" rel="footnote" title="大抵（無意味な）importとセットになっている。import死すべし派としてはほんとつらい">3</a></sup></p>
+
+<p>そして Elixir のマクロと <code>use</code> を除いた機能だけで普通にプログラミングするのは、不可能とは言わないが、かなり手間だし、正直ストレスが溜まる。<br>
+つまり <code>use</code> は、普通にプログラミングするためには、使わざるを得ないのが現状である。<br>
+マクロは使わなくても何とかなるが、<code>use</code> は使わざるを得ないという点で <strong>マクロより質が悪い</strong>。</p>
+
+<p>Elixir は、ミックスインや <code>@behaviour</code> のデフォルト実装などを、それ単体の機能として提供するべきだと思う。<br>
+<code>use</code> は悪という文化を根付かせたいけど、今は <code>use</code> が無いとまともにプログラミングできないので、そう言う訳にもいかない。<br>
+ただ、マクロは良くないので、可能な限り使わないようにしよう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>ドキュメントを読めばいいと思うかもしれないけど、ドキュメントには「こう使うものだよ」とは書いているが、「この名前の関数と attribute が定義されるし、このモジュールをimportしているし、定義した関数内でこの関数を使っているよ」ということまでは書いてくれているのは見たことが無い <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>提供者側がうまいこと書いていれば一部だけ使うように選択できるが、そんな親切な <code>__using__/1</code> は見たことが無い <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>大抵（無意味な）<code>import</code>とセットになっている。<code>import</code>死すべし派としてはほんとつらい <a href="#fnref3">↩</a></p>
+</li>
+
+</ol>
+</div>

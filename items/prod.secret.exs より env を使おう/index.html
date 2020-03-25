@@ -1,0 +1,105 @@
+<p><code>mix phx.new</code> で Phoenix プロジェクトを生成すると、<code>config/</code> ディレクトリの中に <code>prod.secret.exs</code> というファイルが生成されます。</p>
+
+<p>この <code>prod.secret.exs</code> は、不要なので <strong>サクッと消しましょう</strong>。これを有効に活用しようなんて考える必要はありません。</p>
+
+<h2>
+<span id="なぜ-prodsecretexs-は不要か" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C-prodsecretexs-%E3%81%AF%E4%B8%8D%E8%A6%81%E3%81%8B"><i class="fa fa-link"></i></a>なぜ <code>prod.secret.exs</code> は不要か</h2>
+
+<p>端的に言えば、パッケージ化した際に、このファイルに書いたシークレットな情報（以降シークレット情報と呼ぶ）が埋め込まれてしまうからです。<sup id="fnref1"><a href="#fn1" rel="footnote" title="正確に言えば sys.config ファイルになるだけなので、これを弄れば実行時に書き換えることはできますが、それは Erlang term で書く必要があるのでこれも結構厳しい">1</a></sup></p>
+
+<p><a href="https://qiita.com/melpon/items/d61907ae51307a55c39a" id="reference-9ec418fcbb34c32b520c">Elixir アプリケーションをパッケージ化しよう</a> で書いた通り、通常、Phoenix を本番サーバにデプロイする際にはパッケージ化をします。<br>
+<code>prod.secret.exs</code> は、このパッケージ化の際に読み込まれ、パッケージ化したファイルにシークレット情報が埋め込まれます。</p>
+
+<p>これにはいくつか問題があります。</p>
+
+<h3>
+<span id="設定を変えて起動するのが面倒" class="fragment"></span><a href="#%E8%A8%AD%E5%AE%9A%E3%82%92%E5%A4%89%E3%81%88%E3%81%A6%E8%B5%B7%E5%8B%95%E3%81%99%E3%82%8B%E3%81%AE%E3%81%8C%E9%9D%A2%E5%80%92"><i class="fa fa-link"></i></a>設定を変えて起動するのが面倒</h3>
+
+<p>シークレット情報は本番で扱う情報なので、本番にデプロイしてから問題が発覚することがよくあります。<br>
+それを直すためには、<code>prod.secret.exs</code> を書き換えて再度パッケージ化する必要があるため面倒です。</p>
+
+<h3>
+<span id="サーバ毎に異なる設定が書きにくい" class="fragment"></span><a href="#%E3%82%B5%E3%83%BC%E3%83%90%E6%AF%8E%E3%81%AB%E7%95%B0%E3%81%AA%E3%82%8B%E8%A8%AD%E5%AE%9A%E3%81%8C%E6%9B%B8%E3%81%8D%E3%81%AB%E3%81%8F%E3%81%84"><i class="fa fa-link"></i></a>サーバ毎に異なる設定が書きにくい</h3>
+
+<p>サーバごとに異なるシークレット情報がある場合、サーバごとにシークレット情報を変えてパッケージ化する必要があります。<br>
+パッケージ１個を複数のサーバにデプロイするといったことが出来ません。</p>
+
+<h3>
+<span id="権限を分けるのが難しい" class="fragment"></span><a href="#%E6%A8%A9%E9%99%90%E3%82%92%E5%88%86%E3%81%91%E3%82%8B%E3%81%AE%E3%81%8C%E9%9B%A3%E3%81%97%E3%81%84"><i class="fa fa-link"></i></a>権限を分けるのが難しい</h3>
+
+<p>開発やパッケージ化やデプロイする人と、シークレット情報を知っていて構わない人が常に一緒であるとは限りません。</p>
+
+<p>特定の人だけがシークレット情報を知っているようにするには、その人がパッケージ化をするか、<code>prod.secret.exs</code> に触れないようにしながらパッケージ化するための方法を提供する必要があります。<br>
+また、パッケージ化したデータにはシークレット情報が含まれているため、その人がデプロイするか、ファイルの中身を見られないようにしながらデプロイする方法を提供必要があります。</p>
+
+<h2>
+<span id="代替手段" class="fragment"></span><a href="#%E4%BB%A3%E6%9B%BF%E6%89%8B%E6%AE%B5"><i class="fa fa-link"></i></a>代替手段</h2>
+
+<p>いくつかありますが、一番良いのは環境変数を使うことでしょう。</p>
+
+<p>環境変数以外の方法としては、<code>sys.config</code> を書き換えるか読み込むパスを変える、JSON や <code>.exs</code> 等の設定ファイルを作って実行時に読み込む等が考えられますが、いろいろ考えたり試行錯誤した結果、自分は環境変数が一番良いという結論に至りました。</p>
+
+<p>環境変数を利用してシークレットな情報等の設定を読むライブラリとして <a href="https://hex.pm/packages/env" rel="nofollow noopener" target="_blank"><code>env</code></a> があります。</p>
+
+<p>以下のように設定を書くだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">case</span> <span class="no">Mix</span><span class="o">.</span><span class="n">env</span><span class="p">()</span> <span class="k">do</span>
+  <span class="ss">:test</span> <span class="o">-&gt;</span>
+    <span class="n">config</span> <span class="ss">:my_app</span><span class="p">,</span>
+      <span class="ss">db_password:</span> <span class="s2">"testdb"</span>
+  <span class="ss">:prod</span> <span class="o">-&gt;</span>
+    <span class="n">config</span> <span class="ss">:my_app</span><span class="p">,</span>
+      <span class="ss">db_password:</span> <span class="p">{</span><span class="ss">:system</span><span class="p">,</span> <span class="s2">"MY_APP_DB_PASSWORD"</span><span class="p">}</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Env</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="ss">:my_app</span><span class="p">,</span> <span class="ss">:db_password</span><span class="p">)</span>
+<span class="c1"># MIX_ENV=test なら "testdb"</span>
+<span class="c1"># MIX_ENV=prod なら MY_APP_DB_PASSWORD 環境変数の値</span>
+</pre></div></div>
+
+<p><code>Application.fetch_env!/2</code> などを使って設定を読んでいた部分は、全部 <code>Env.fetch!/2</code> などに置き換えましょう。</p>
+
+<p>シークレットな情報だけでなく、気軽に外から変えたい値や、サーバごとに異なる設定も全部環境変数にします。<br>
+全部環境変数にするのはメリットが少ないので、必要そうな部分だけやっていくのがいいでしょう。</p>
+
+<p>デメリットとしては、環境変数は文字列しか扱えないことです。<br>
+<code>prod.secret.exs</code> は Elixir のプリミティブな型を使えますが、環境変数には文字列しかありません。<br>
+なので状況に応じて様々な文字列フォーマットを <a href="https://github.com/michalmuskala/env#transformer" rel="nofollow noopener" target="_blank"><code>:transformer</code></a> などの機能を使って頑張ってパースして扱うことになるでしょう。<br>
+これは微妙ですが、<code>prod.secret.exs</code> のデメリットと比べるとマシだと思うので受け入れましょう。</p>
+
+<h2>
+<span id="20181007-追記" class="fragment"></span><a href="#20181007-%E8%BF%BD%E8%A8%98"><i class="fa fa-link"></i></a>2018/10/07 追記</h2>
+
+<p>Distillery 2.0 になって <a href="https://hexdocs.pm/distillery/config/runtime.html#config-providers" rel="nofollow noopener" target="_blank">Config Provider</a> が使えるようになり、いろんな方法で実行時の設定を入れられるようになりました。<br>
+なので今なら env を使わず、実行時に環境変数を読んで <code>Application.put_env/3</code> する設定プロバイダを書くのが良いでしょう。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://elixirforum.com/t/prod-secret-exs-or-env-variables/10000" rel="nofollow noopener" target="_blank">Prod.secret.exs or env. variables? - General Questions - Elixir Forum</a></li>
+</ul>
+
+<p>他の手段に関しても結構書いてるので、気になる方は見ておいても良いと思います。</p>
+
+<ul>
+<li><a href="https://hexdocs.pm/distillery/runtime-configuration.html#configuration-conventions" rel="nofollow noopener" target="_blank">Runtime Configuration – distillery v1.5.2</a></li>
+</ul>
+
+<p>Distillery の推奨する書き方と真っ向から反対しているので、その点も注意する必要があります。<sup id="fnref2"><a href="#fn2" rel="footnote" title="start/2 で Application.put_env/3 しろって書いてるように読めるけど、自身の start/2 アプリケーションが起動した時点で依存しているアプリケーションは既に起動しているので、依存しているアプリケーションに起動時に設定を読む奴が居た場合は自身の start/2 の段階で設定しても手遅れなので、何でこの方法を推奨してるのか分からない。">2</a></sup></p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>正確に言えば <code>sys.config</code> ファイルになるだけなので、これを弄れば実行時に書き換えることはできますが、それは Erlang term で書く必要があるのでこれも結構厳しい <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><code>start/2</code> で <code>Application.put_env/3</code> しろって書いてるように読めるけど、自身の <code>start/2</code> アプリケーションが起動した時点で依存しているアプリケーションは既に起動しているので、依存しているアプリケーションに起動時に設定を読む奴が居た場合は自身の <code>start/2</code> の段階で設定しても手遅れなので、何でこの方法を推奨してるのか分からない。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,331 @@
+<p>Erlangの値は不変（immutable）です。</p>
+
+<p>この不変というのは、Erlangを利用する側からは不変に見えるというだけの話です。<br>
+実際のところErlangは、一度生成したオブジェクトの値をガンガン書き換えます。<sup id="fnref1"><a href="#fn1" rel="footnote" title="例えばsetelement/3は、特定の条件を満たすと in-place で書き換えてくれます。">1</a></sup></p>
+
+<p>Erlangバイナリもその対象であり、外から見てる限りでは操作を加える度にコピーしているように見えますが、内部では全く異なる動作になっています。<br>
+特に、バイナリの後方に値を追加する際にはとても良いパフォーマンスを発揮するように最適化されています。</p>
+
+<p>今回は、Erlangのバイナリが内部的にどのような構造になっているかと、バイナリを後方に追加する時にそれらがどのような挙動になるかを説明します。</p>
+
+<p>なお、今回の話は <a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a> の 4.2  Constructing Binaries を深く掘り下げた内容になっています。</p>
+
+<h1>
+<span id="erlangバイナリの種類" class="fragment"></span><a href="#erlang%E3%83%90%E3%82%A4%E3%83%8A%E3%83%AA%E3%81%AE%E7%A8%AE%E9%A1%9E"><i class="fa fa-link"></i></a>Erlangバイナリの種類</h1>
+
+<p>Erlangのバイナリは、内部的には４種類あります。<br>
+HeapBin, ProcBin, SubBin, BinMatchState です。<br>
+BinMatchState は、今回の話では使わないので省いています。</p>
+
+<h2>
+<span id="heapbin" class="fragment"></span><a href="#heapbin"><i class="fa fa-link"></i></a>HeapBin</h2>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F730c1b5c-aff5-20cd-deac-b17dfc3dbcc2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=1fdae356e6f3042c0cab0bc2fed97ba1" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F730c1b5c-aff5-20cd-deac-b17dfc3dbcc2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=1fdae356e6f3042c0cab0bc2fed97ba1" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/730c1b5c-aff5-20cd-deac-b17dfc3dbcc2.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F730c1b5c-aff5-20cd-deac-b17dfc3dbcc2.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=4eb557655c95c392702e36268c74ab66 1x" loading="lazy"></a></p>
+
+<p>HeapBinは、小さいバイナリ（64バイト以下）を格納する際に使います。<br>
+2ワード+<code>data</code>バイト分しか容量を取らないので省メモリです。<br>
+また、HeapBinの中に実データが格納されていてデリファレンス不要であるため、アクセスは高速です。</p>
+
+<p><code>thing_word</code>というのは、バイナリを種別するためのタグ<sup id="fnref1"><a href="#fn1" rel="footnote" title="例えばsetelement/3は、特定の条件を満たすと in-place で書き換えてくれます。">1</a></sup>です。<br>
+<code>size</code>は実データのバイト数です。</p>
+
+<h2>
+<span id="procbin" class="fragment"></span><a href="#procbin"><i class="fa fa-link"></i></a>ProcBin</h2>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F89fcbd9d-ece1-6261-35d1-9d6f13819cc6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=04dc7b24999e8a570fccad339054c613" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F89fcbd9d-ece1-6261-35d1-9d6f13819cc6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=04dc7b24999e8a570fccad339054c613" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/89fcbd9d-ece1-6261-35d1-9d6f13819cc6.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F89fcbd9d-ece1-6261-35d1-9d6f13819cc6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=f897960bdd8eef1e555922d1d7be568d 1x" loading="lazy"></a></p>
+
+<p>ProcBinは、実データを格納するためのBinaryと、それを参照するProcBinの２つに分かれています。<br>
+HeapBinに収まらない、大きいバイナリを扱う際に使います。</p>
+
+<p>ProcBinが6ワード、Binaryが3ワード+<code>orig_bytes</code>バイト分取るので、そこそこメモリを使います。<br>
+また、２つの要素に分かれているため、アクセスはそこまで早くありません。</p>
+
+<p>ただし、Binaryは全プロセスが共有している共有ヒープ上に格納されます。<br>
+そのため、メッセージパッシングの際にこのバイナリをコピーする必要が無くなるのがメリットです。</p>
+
+<p><code>orig_bytes</code>が実データを格納するための領域で、その領域のバイト数が<code>orig_size</code>に格納されています。</p>
+
+<p><code>size</code>には、<code>orig_bytes</code>の領域のうち、現在何バイトを使っているかという値を格納しています。</p>
+
+<p>なお、今回の説明で使わない部分は灰色の文字にしています。</p>
+
+<h2>
+<span id="subbin" class="fragment"></span><a href="#subbin"><i class="fa fa-link"></i></a>SubBin</h2>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fefa0d7fb-c729-ca7f-c1fc-3da6e9d6d1d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=2fee15d73de7889e8241620659e6abce" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fefa0d7fb-c729-ca7f-c1fc-3da6e9d6d1d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=2fee15d73de7889e8241620659e6abce" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/efa0d7fb-c729-ca7f-c1fc-3da6e9d6d1d1.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2Fefa0d7fb-c729-ca7f-c1fc-3da6e9d6d1d1.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=82db2d0024631ef4e0164471a6f2e010 1x" loading="lazy"></a></p>
+
+<p>SubBinは、HeapBinやProcBinの一部を参照する際に使います。</p>
+
+<p><code>orig</code>は、HeapBinかProcBinのどちらかを指していて、<code>orig</code>の指す先にある実データの、<code>off</code>バイトから<code>off + size</code>バイトまでを実データとして扱います。<br>
+<code>orig</code>がProcBinを指している場合、実データにアクセスするために間接参照が２回必要になるため、遅くなります。<br>
+ただし、実データの全部または一部を他のバイナリと共有できるため、省メモリになるし、構築もコピーが不要な分、高速になります。</p>
+
+<p><code>is_writable</code>フラグは、このバイナリに値を追加する際に、既存の実データに追加していいかどうかを判断するためのフラグです。</p>
+
+<p>なお、<code>bitoff</code>や<code>bitsize</code>というフィールドが<code>is_writable</code>と同じワードの場所にあるのですが、図に入れるのが面倒だったので省いています。<br>
+これらのフィールドはビットを扱う時に必要なフィールドで、これを持っているのはSubBinだけであるため、ビットレベルでバイナリを扱う際には必ずSubBinになります。</p>
+
+<h1>
+<span id="バイナリに値を追加する" class="fragment"></span><a href="#%E3%83%90%E3%82%A4%E3%83%8A%E3%83%AA%E3%81%AB%E5%80%A4%E3%82%92%E8%BF%BD%E5%8A%A0%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>バイナリに値を追加する</h1>
+
+<p>バイナリに値を追加するという処理は、頻繁に出現します。<br>
+例えば <a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a> では、以下の例が載っています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">my_list_to_binary</span><span class="p">(</span><span class="nv">List</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nf">my_list_to_binary</span><span class="p">(</span><span class="nv">List</span><span class="p">,</span> <span class="o">&lt;&lt;&gt;&gt;</span><span class="p">).</span>
+
+<span class="nf">my_list_to_binary</span><span class="p">([</span><span class="nv">H</span><span class="p">|</span><span class="nv">T</span><span class="p">],</span> <span class="nv">Acc</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nf">my_list_to_binary</span><span class="p">(</span><span class="nv">T</span><span class="p">,</span> <span class="o">&lt;&lt;</span><span class="nv">Acc</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span><span class="nv">H</span><span class="o">&gt;&gt;</span><span class="p">);</span>
+<span class="nf">my_list_to_binary</span><span class="p">([],</span> <span class="nv">Acc</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nv">Acc</span><span class="p">.</span>
+</pre></div></div>
+
+<p>このようなコードはよく書くことになるため、Erlangはその処理のために最適化しています。<br>
+良いパフォーマンスを任意に引き出せるようにするために、この最適化がどのように動いているのかを知っておくのは重要でしょう。</p>
+
+<h2>
+<span id="戦略" class="fragment"></span><a href="#%E6%88%A6%E7%95%A5"><i class="fa fa-link"></i></a>戦略</h2>
+
+<p>基本的には、バイナリに値を追加する際に確保する際に、<strong>メモリは余分に確保しておく</strong> という戦略になります。<br>
+そうすれば、次の値の追加では、余分に確保しておいた領域に値を追加すればいいだけなので、追加する操作をする度に新しくメモリを確保する、ということが不要になります。</p>
+
+<p>ただし、<strong>外から見た際に不変に見えなければならない</strong> という前提があります。<br>
+そのため、いつでも空き領域に値を追加して良いという訳ではありません。<br>
+その辺をうまくやろうとすると、以下のようになります。</p>
+
+<h2>
+<span id="具体的な手順" class="fragment"></span><a href="#%E5%85%B7%E4%BD%93%E7%9A%84%E3%81%AA%E6%89%8B%E9%A0%86"><i class="fa fa-link"></i></a>具体的な手順</h2>
+
+<p>具体的な手順を文字で書くと、以下のようになります。</p>
+
+<p>AというバイナリにBという値を追加する時、</p>
+
+<ul>
+<li>
+<p>Aに追記不可の場合:</p>
+
+<ul>
+<li>（つまりAがHeapBin または、AがProcBin または、AがSubBinかつ<code>is_writable==0</code>の場合）</li>
+<li>NバイトのBinaryを参照するProcBinを作る
+
+<ul>
+<li>N: AとBのサイズの２倍。ただしそれが256より小さければ256</li>
+</ul>
+</li>
+<li>新しいSubBinを生成し、<code>is_writable</code>を1にして、そのProcBinを参照する</li>
+</ul>
+</li>
+<li>
+<p>Aに追記可能な場合:</p>
+
+<ul>
+<li>（つまりAがSubBinかつ<code>is_writable==1</code>の場合）</li>
+<li>Aの<code>is_writable</code>を0にする</li>
+<li>Bのサイズを足すと、Binaryの<code>orig_size</code>のサイズを超えてしまう場合:
+
+<ul>
+<li>Nバイトの領域を持つようにBinaryをreallocし、ProcBinはそのBinaryを指すようにする
+
+<ul>
+<li>N: AとBのサイズの２倍。ただしそれが256より小さければ256</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>新しいSubBinを生成し、<code>is_writable</code>を1にして、ProcBinを参照する</li>
+</ul>
+</li>
+<li><p>得られたSubBinの指すバイナリにBの内容を書き込む</p></li>
+</ul>
+
+<p>という動作になります。<sup id="fnref2"><a href="#fn2" rel="footnote" title="OTP-19.2 時点の動作です。">2</a></sup></p>
+
+<p>文字だと分かりにくいので、具体的な処理から図を書いていきます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% A. 初期化
+</span><span class="nv">A</span> <span class="o">=</span> <span class="nn">binary</span><span class="p">:</span><span class="nf">copy</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="o">&gt;&gt;</span><span class="p">),</span>
+
+<span class="c">%% B. Aに3バイト追加
+</span><span class="nv">B</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">A</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+
+<span class="c">%% C. Bに3バイト追加
+</span><span class="nv">C</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">B</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">9</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+
+<span class="c">%% D. Cに3バイト追加
+</span><span class="nv">D</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">C</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">12</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+
+<span class="c">%% E. Dに1000バイト追加
+</span><span class="nv">E</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">D</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="p">(</span><span class="nn">binary</span><span class="p">:</span><span class="nf">copy</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="mi">100</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="mi">1000</span><span class="p">))</span><span class="o">/</span><span class="n">binary</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+
+<span class="c">%% F. Dに3バイト追加
+</span><span class="nv">F</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">D</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">13</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span> <span class="mi">15</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p>このようなコードを書いた場合、以下のような動作になります。</p>
+
+<h2>
+<span id="a-初期化" class="fragment"></span><a href="#a-%E5%88%9D%E6%9C%9F%E5%8C%96"><i class="fa fa-link"></i></a>A. 初期化</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">A</span> <span class="o">=</span> <span class="nn">binary</span><span class="p">:</span><span class="nf">copy</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="o">&gt;&gt;</span><span class="p">),</span>
+</pre></div></div>
+
+<p>結果:</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F338bbbec-bd5a-8e34-9bc4-7b2f44a93a24.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ec7333e7ebb7e05e43128b207d799179" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F338bbbec-bd5a-8e34-9bc4-7b2f44a93a24.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ec7333e7ebb7e05e43128b207d799179" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/338bbbec-bd5a-8e34-9bc4-7b2f44a93a24.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F338bbbec-bd5a-8e34-9bc4-7b2f44a93a24.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=ae87595415abf684b495ffbed261635c 1x" loading="lazy"></a></p>
+
+<p>これは要素の追加ではなく、単に新しくバイナリを生成する処理になります。<br>
+64バイト以下のバイナリであるため、HeapBinを生成します。</p>
+
+<p>また、新しく生成されたり、書き換わった要素は色を変えるようにしています。（ただし<code>thing_word</code>を除く）</p>
+
+<p>なお、値を追加する時に<code>binary:copy/1</code>で<code>&lt;&lt;1, 2, 3&gt;&gt;</code>をコピーしているのは、定数畳み込みの最適化を抑制するためです。<br>
+<a href="http://qiita.com/melpon/items/2e96caf2bfaebbd46bb3" id="reference-1c5d3b2ce0ff682030e2">BEAMの関数をディスアセンブルする</a>で書いたように、単に<code>&lt;&lt;1, 2, 3&gt;&gt;</code>と書くだけだと全て畳み込まれて意図した動作をしません。</p>
+
+<p>つまり、少なくとも OTP 19.2 において、 <a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a> の 4.2  Constructing Binaries にある例は説明の通りの動作をしません。</p>
+
+<h2>
+<span id="b-aに3バイト追加" class="fragment"></span><a href="#b-a%E3%81%AB3%E3%83%90%E3%82%A4%E3%83%88%E8%BF%BD%E5%8A%A0"><i class="fa fa-link"></i></a>B. Aに3バイト追加</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">B</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">A</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p>結果:</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F0ba3c52a-1097-232a-d16d-c10f2e826e6a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=69b3c9347fd98e131683d48428fa3d3f" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F0ba3c52a-1097-232a-d16d-c10f2e826e6a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=69b3c9347fd98e131683d48428fa3d3f" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/0ba3c52a-1097-232a-d16d-c10f2e826e6a.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F0ba3c52a-1097-232a-d16d-c10f2e826e6a.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=c72396aa383ce24d5d2523a01add8f5b 1x" loading="lazy"></a></p>
+
+<p>AはHeapBinであるため、追記不可です。<br>
+そのため新しくバイナリを生成します。</p>
+
+<p>この時、Binaryの<code>orig_bytes</code>の領域として <strong>256バイト確保します</strong>。<br>
+実際利用する領域は6バイトであるため、<code>ProcBin:size</code>には6を入れます。<br>
+つまりBinaryの<code>orig_bytes</code>は、250バイトが未使用領域になります。</p>
+
+<p>また、<code>SubBin:size</code>や<code>SubBin:off</code>にも値を設定し、<strong><code>is_writable</code>を1にします</strong>。<br>
+これによって、次の書き込みで追記が可能になります。</p>
+
+<h2>
+<span id="c-bに3バイト追加" class="fragment"></span><a href="#c-b%E3%81%AB3%E3%83%90%E3%82%A4%E3%83%88%E8%BF%BD%E5%8A%A0"><i class="fa fa-link"></i></a>C. Bに3バイト追加</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">C</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">B</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">9</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p>結果:</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3dce5acf-4691-773c-d049-4d928980da9f.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=d2b06a44ca37055ed140119b118f2f7c" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3dce5acf-4691-773c-d049-4d928980da9f.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=d2b06a44ca37055ed140119b118f2f7c" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/3dce5acf-4691-773c-d049-4d928980da9f.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F3dce5acf-4691-773c-d049-4d928980da9f.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=f35226ddc53c5d5c4347d50dfda105b2 1x" loading="lazy"></a></p>
+
+<p>BはSubBinかつ<code>is_writable</code>が1であるため、<strong>追記可能</strong>です。<br>
+そのため、新しいバイナリを確保することなく、Cの内容が<code>B-&gt;orig-&gt;bytes-&gt;orig_bytes</code>に追加されます。<br>
+使用サイズが増えたので、<code>B-&gt;orig-&gt;size</code>を6から9にします。<br>
+また、<strong><code>B-&gt;is_writable</code>は0に書き換えます</strong>。</p>
+
+<p>Cのために新しくSubBinを生成し、<code>orig_bytes</code>の[1..9]バイトを参照するようにします。<br>
+<code>is_writable</code>は1にしておきます。</p>
+
+<p>この時、ProcBinは9バイト使用している、とマークしていますが、BはSubBinであり、[1..6]バイトを利用することになっているため、Bの指している内容は変わっていません。<br>
+そのため<strong>不変性は守られています</strong>。</p>
+
+<h2>
+<span id="d-cに3バイト追加" class="fragment"></span><a href="#d-c%E3%81%AB3%E3%83%90%E3%82%A4%E3%83%88%E8%BF%BD%E5%8A%A0"><i class="fa fa-link"></i></a>D. Cに3バイト追加</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">D</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">C</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">12</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p>結果:</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F66002e8f-7ec6-ddc9-158d-cc73922a0aa6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ad4825da6756e90639c670682336498e" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F66002e8f-7ec6-ddc9-158d-cc73922a0aa6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=ad4825da6756e90639c670682336498e" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/66002e8f-7ec6-ddc9-158d-cc73922a0aa6.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F66002e8f-7ec6-ddc9-158d-cc73922a0aa6.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=d552fd06b3809866ef94ad9ef946643b 1x" loading="lazy"></a></p>
+
+<p>先ほどと同じです。Aはもう説明する上で使わないので非表示にしました。</p>
+
+<p>CはSubBinかつ<code>is_writable</code>が1であるため、追記可能です。<br>
+そのため、新しいバイナリを確保することなく、Dの内容が<code>C-&gt;orig-&gt;bytes-&gt;orig_bytes</code>に追加されます。<br>
+使用サイズが増えたので、<code>C-&gt;orig-&gt;size</code>を9から12にします。<br>
+また、<code>C-&gt;is_writable</code>は0に書き換えます。</p>
+
+<p>Dのために新しくSubBinを生成し、<code>orig_bytes</code>の[1..12]バイトを参照するようにします。<br>
+<code>is_writable</code>は1にしておきます。</p>
+
+<p>この時、BinaryやProcBinは12バイト使用している、とマークしていますが、CはSubBinであり、[1..9]バイトを利用することになっているため、Cの内容は変わっていません。<br>
+そのため不変性は守られています。</p>
+
+<h2>
+<span id="e-dに1000バイト追加" class="fragment"></span><a href="#e-d%E3%81%AB1000%E3%83%90%E3%82%A4%E3%83%88%E8%BF%BD%E5%8A%A0"><i class="fa fa-link"></i></a>E. Dに1000バイト追加</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">E</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">D</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="p">(</span><span class="nn">binary</span><span class="p">:</span><span class="nf">copy</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="mi">100</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="mi">1000</span><span class="p">))</span><span class="o">/</span><span class="n">binary</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p>結果:</p>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F572101e9-7bf7-5048-3b8d-831af645b1c7.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=48a056c1ba073e99f59d36d271553a2f" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F572101e9-7bf7-5048-3b8d-831af645b1c7.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=48a056c1ba073e99f59d36d271553a2f" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/572101e9-7bf7-5048-3b8d-831af645b1c7.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F572101e9-7bf7-5048-3b8d-831af645b1c7.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=6329f9b395bf045e69c190417f0333b3 1x" loading="lazy"></a></p>
+
+<p>Binaryの余分な領域を超えるサイズを追加するとどうなるか、という実験です。</p>
+
+<p>DはSubBinかつ<code>is_writable</code>が1であるため、追記可能です。<br>
+しかし <code>D-&gt;orig-&gt;bytes-&gt;orig_bytes</code> の領域には1000バイトの余分な領域はありません。<br>
+そのため <strong><code>D-&gt;orig-&gt;bytes</code>の指すBinaryをreallocして、新しくBinaryを生成します</strong>。<br>
+この時<code>orig_bytes</code>の領域は、新しく必要な領域の２倍、つまり1012*2の2024バイトになります。<br>
+<code>D-&gt;orig-&gt;bytes</code>は新しく生成した領域を指すように切り替え、使用サイズを1024バイトにします。<br>
+また、<code>D-&gt;is_writable</code>は0にしておきます。</p>
+
+<p>Eのために新しくSubBinを生成し、<code>orig_bytes</code>の[1..1012]バイトを参照するようにします。<br>
+<code>is_writable</code>は1にしておきます。</p>
+
+<p>この時、BinaryやProcBinは1024バイト使用している、とマークしていますが、DはSubBinであり、[1..12]バイトを利用することになっているため、Dの内容は変わっていません。<br>
+そのため不変性は守られています。</p>
+
+<h2>
+<span id="f-dに3バイト追加" class="fragment"></span><a href="#f-d%E3%81%AB3%E3%83%90%E3%82%A4%E3%83%88%E8%BF%BD%E5%8A%A0"><i class="fa fa-link"></i></a>F. Dに3バイト追加</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">F</span> <span class="o">=</span> <span class="o">&lt;&lt;</span><span class="nv">D</span><span class="o">/</span><span class="n">binary</span><span class="p">,</span> <span class="mi">13</span><span class="p">,</span> <span class="mi">14</span><span class="p">,</span> <span class="mi">15</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+</pre></div></div>
+
+<p><a href="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F28d2dafc-a4d2-cc67-ff5b-b870b58a65cc.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=d9896cf1e867df056d3a3f099d20ed9c" target="_blank" rel="nofollow noopener"><img src="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F28d2dafc-a4d2-cc67-ff5b-b870b58a65cc.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;s=d9896cf1e867df056d3a3f099d20ed9c" alt="image" data-canonical-src="https://qiita-image-store.s3.amazonaws.com/0/64060/28d2dafc-a4d2-cc67-ff5b-b870b58a65cc.png" srcset="https://qiita-user-contents.imgix.net/https%3A%2F%2Fqiita-image-store.s3.amazonaws.com%2F0%2F64060%2F28d2dafc-a4d2-cc67-ff5b-b870b58a65cc.png?ixlib=rb-1.2.2&amp;auto=format&amp;gif-q=60&amp;q=75&amp;w=1400&amp;fit=max&amp;s=48f40a0155fa2672d979d3ba48a170e2 1x" loading="lazy"></a></p>
+
+<p>今度は、Eではなく、Dに3バイト追加しています。B, Cはもう説明する上では使わないので非表示にしました。</p>
+
+<p>DはSubBinですが、<strong>既にis_writableが0なので、追記不可です</strong>。<br>
+そのため、Fのために新しくBinary, ProcBin, SubBinを生成します。</p>
+
+<p>この時、Binaryの<code>orig_bytes</code>の領域として256バイト確保します。<br>
+Binaryには、D-&gt;orig-&gt;bytesの指す領域から[1..12]バイトをコピーし、新しい要素の3バイトを追加で書き込み、合計の使用領域は15バイトとなります。</p>
+
+<p>もしここでDの<code>is_writable</code>を考慮しなかった場合、<code>D-&gt;orig-&gt;bytes</code>の指す領域が書き換えられることになり、Eの不変性が崩れることに注意して下さい。<br>
+<code>is_writable</code>を使って新しい領域を確保させることで、そのようなるのを防いでいます。</p>
+
+<h1>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h1>
+
+<p>重要なのは、</p>
+
+<ul>
+<li>SubBinをうまく使ってバイナリを共有することで、省メモリ・構築の高速化をしている。</li>
+<li>
+<code>is_writable</code>が1の時はバイナリの後方に追記可能という意味であり、一度でもバイナリに値を追加すると<code>is_writable</code>が0になる。これによって外から見たときの不変性を保っている。</li>
+</ul>
+
+<p>という点です。</p>
+
+<p>つまりバイナリは <strong>後方に、かつ１度だけ追加する場合</strong> とても良い効率になります。<br>
+このルールを理解して利用することで、バイナリを使ってある程度高速に動作するコードが書けるようになるでしょう。</p>
+
+<h1>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h1>
+
+<ul>
+<li><a href="http://erlang.org/doc/efficiency_guide/binaryhandling.html" rel="nofollow noopener" target="_blank">Erlang -- Constructing and Matching Binaries</a></li>
+<li><a href="https://github.com/erlang/otp/tree/OTP-19.2/erts/emulator/beam" rel="nofollow noopener" target="_blank">otp/erts/emulator/beam at OTP-19.2 · erlang/otp</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>例えば<code>setelement/3</code>は、<a href="http://erlang.org/doc/efficiency_guide/commoncaveats.html#id63352" rel="nofollow noopener" target="_blank">特定の条件</a>を満たすと in-place で書き換えてくれます。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><a href="https://github.com/erlang/otp/tree/OTP-19.2" rel="nofollow noopener" target="_blank">OTP-19.2</a> 時点の動作です。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

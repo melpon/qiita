@@ -1,0 +1,222 @@
+<p>これは AssetBundle をひたすらクソと言い続けるエントリーだ。</p>
+
+<h1>
+<span id="追記" class="fragment"></span><a href="#%E8%BF%BD%E8%A8%98"><i class="fa fa-link"></i></a>追記</h1>
+
+<p>Unity5でかなり良くなったらしい</p>
+
+<ul>
+<li><a href="http://www.slideshare.net/MakotoItoh/kansai-cedec" class="autolink" rel="nofollow noopener" target="_blank">http://www.slideshare.net/MakotoItoh/kansai-cedec</a></li>
+</ul>
+
+<h1>
+<span id="前提" class="fragment"></span><a href="#%E5%89%8D%E6%8F%90"><i class="fa fa-link"></i></a>前提</h1>
+
+<p>iOS と Android 向けのモバイルゲームによくある、</p>
+
+<ul>
+<li>本体の容量を 100MB、50MB 以内に収めつつ、</li>
+<li>初回起動時に数百 MB ダウンロードさせ、</li>
+<li>リソースの更新を追加ダウンロードによって行なう</li>
+</ul>
+
+<p>という機能の実現に AssetBundle を利用するものとする。</p>
+
+<h1>
+<span id="assetbundle-の概要" class="fragment"></span><a href="#assetbundle-%E3%81%AE%E6%A6%82%E8%A6%81"><i class="fa fa-link"></i></a>AssetBundle の概要</h1>
+
+<p>Unity で、特定の機能を使ってアセットをシリアライズしたファイルを AssetBundle と呼ぶ。<br>
+通常、Unity のアセットは、プロジェクトのビルド時に全て含まれるのだけれども、AssetBundle はそれとは別で独立して作ることができる。<br>
+そのため、AssetBundle をネットワーク上に置いておき、アプリケーションの中からダウンロードして使うのが主な利用法となる。<br>
+以下のサイトを見れば大体分かる。</p>
+
+<ul>
+<li><a href="http://docs-jp.unity3d.com/Documentation/Manual/AssetBundlesIntro.html" rel="nofollow noopener" target="_blank">アセットバンドル（Unity Proのみ）</a></li>
+<li><a href="http://vimeopro.com/unity3djp/unite-japan-2013-for-the-public/video/64375290" rel="nofollow noopener" target="_blank">Unite Japan 2013 公開動画 - [Unite Japan 2013]シーン／メモリ／アセットバンドル</a></li>
+</ul>
+
+<p>これだけ見ると便利そうなのだが、実際に使ってみるとクソだらけだった。<br>
+以下、クソな点を詳細に書いていく。</p>
+
+<p>ただし、このエントリーは「何がクソなのか」を解説するだけだ。<br>
+どのように解決したか、というのはまた別のエントリーとして上げる予定（あくまで予定）だ。</p>
+
+<h1>
+<span id="同じ-assetbundle-をロードするとエラーになる" class="fragment"></span><a href="#%E5%90%8C%E3%81%98-assetbundle-%E3%82%92%E3%83%AD%E3%83%BC%E3%83%89%E3%81%99%E3%82%8B%E3%81%A8%E3%82%A8%E3%83%A9%E3%83%BC%E3%81%AB%E3%81%AA%E3%82%8B"><i class="fa fa-link"></i></a>同じ AssetBundle をロードするとエラーになる</h1>
+
+<ul>
+<li><a href="http://docs-jp.unity3d.com/Documentation/Manual/keepingtrackofloadedassetbundles.html" rel="nofollow noopener" target="_blank">ロードされたアセットバンドルのトラッキング方法</a></li>
+</ul>
+
+<p>このドキュメントにあるように、同じ AssetBundle を複数個同時にロードすることはできない。<br>
+<code>AssetBundle.Unload</code> すれば、再度ロードできるようになる。</p>
+
+<p>これだけ見れば「複数個同時にロードするとメモリの無駄だから、ロード出来ないのは正しい」と思うかもしれない。<br>
+しかしエラーにされると困るのだ。<br>
+エラーは単にコンソールにエラーログが出た上で <code>null</code> が返されるだけなので、このエラーの場合だけはリトライする、みたいな処理を書くことは想定していないはずだ。<br>
+そのため、このエラーは単にロードに失敗してしまったという扱いにせざるを得ず、そしてロードの失敗というのは、わりとどうしようもないエラーであるため、ハンドリングしようが無い。出たらオシマイである。</p>
+
+<p>CPU やネットワークを効率的に利用するため、複数のコルーチンを使って同時にリソースをロードするというのは、よくある処理である。<br>
+あるいは次のシーンのために先行でロードを行なうのも、よくある処理である。<br>
+そのような場合に、同じ AssetBundle を読もうとしてしまうことは、よくある出来事だ。</p>
+
+<p>なのに手の打ちようのないエラーを返されると、非常に困る。<br>
+せめて、既にロード済みかを調べる関数を用意するか、メモリが無駄になってもいいから重複してロードするか、あるいは何も言わずに、既にロード済みの AssetBundle と同じ参照を返す（でもって <code>Unload</code> をうまいこと何とかする）か、そういうことをするべきだ。</p>
+
+<p>かなり面倒なコードを書かないと AssetBundle を安心してロードすることすらできない AssetBundle はクソである。</p>
+
+<h1>
+<span id="無圧縮がクソでかい" class="fragment"></span><a href="#%E7%84%A1%E5%9C%A7%E7%B8%AE%E3%81%8C%E3%82%AF%E3%82%BD%E3%81%A7%E3%81%8B%E3%81%84"><i class="fa fa-link"></i></a>無圧縮がクソでかい</h1>
+
+<p>AssetBundle を生成する際に、圧縮で作るか無圧縮で作るかが選択できる。<br>
+無圧縮で作った場合、メモリ領域を取らず、読み込み速度が早い。その代わりディスクを圧迫する。<br>
+圧縮で作った場合、メモリ領域を取るし、読み込み速度が遅い。しかしディスク容量は少なくなる。</p>
+
+<p>（正直、圧縮で作った場合にわざわざメモリ領域を取る理由が分からない。AssetBundle に含まれている全てのアセットを走査するという前提なら、アセットを展開しながらロードすることもできたはずだ。）</p>
+
+<p>最初に作った時は <code>WWW.LoadFromCacheOrDownload</code> を使った。<br>
+ダウンロードと無圧縮でのロードを同時にやってくれるため、楽ができると思ったからだ。<br>
+しかししばらく使っていて、無圧縮というものを勘違いしていたことに気がついた。</p>
+
+<p>無圧縮というのは、単にそのアセット（とそこから依存しているアセット）の合計ぐらいになるものだと思っていた。<br>
+しかし実際は、画像がピクセルデータになって保存される。<br>
+つまり 2048x2048 の RGBA 画像を AssetBundle に含めるだけで、サイズが <strong>16MB</strong> 増えることになるのだ。<br>
+確かに <code>glTexImage2D</code> をする際には無圧縮の方が都合がいいのだろうけれども、いくら何でも極端過ぎる。<br>
+Windows のゲームをインストールしたら、<strong>ビットマップファイル</strong>が大量に作られているようなものである。<br>
+ある程度展開の早い圧縮方式だと、ファイルから読んでくる速度より展開速度の方が勝ってしまうのでは無いかという気もする。<br>
+（iOS、Android ならシーク時間が無いだけマシなのだろうけど）</p>
+
+<p>今回やっていたプロジェクトでは、圧縮時に 500MB 程度だったデータを <code>WWW.LoadFromCacheOrDownload</code> すると <strong>3GB</strong> になった。<br>
+そんなサイズをユーザの端末に保存させるのは有り得ない。</p>
+
+<p>効率が良いとか言って無圧縮にし、使い物にならないゴミになった AssetBundle はクソである。</p>
+
+<p>（あとついでに言うと、圧縮した AssetBundle を作った場合に、キャッシュに格納されるサイズ（無圧縮状態でのサイズ）が分からない点もクソだ。）</p>
+
+<h1>
+<span id="大きいサイズの-assetbundle-を使えない" class="fragment"></span><a href="#%E5%A4%A7%E3%81%8D%E3%81%84%E3%82%B5%E3%82%A4%E3%82%BA%E3%81%AE-assetbundle-%E3%82%92%E4%BD%BF%E3%81%88%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>大きいサイズの AssetBundle を使えない</h1>
+
+<p>Unity は、Unity が管理するメモリと、Mono のメモリに分かれている。<br>
+Mono のメモリは、例えば <code>new byte[100]</code> などした場合に使われるメモリである。<br>
+このメモリの最大サイズは、メモリが足りなくなる度に増えていく。<br>
+そして、<strong>一度最大サイズが増えたら二度と減らない</strong> のだ。</p>
+
+<p>例えば最初は Mono メモリの最大サイズが 5MB だったとしても、テンポラリ領域として 1MB の領域を 10 個確保したら、いつの間にか、再確保なのかページを増やしているのかは知らないが、Mono メモリの最大サイズが増加しているのだ。<br>
+そしてそのテンポラリ領域を GC が解放しても、Mono メモリの最大サイズは減らない。<br>
+それ以降、5MB 以内の Mono メモリしか消費しないとしても、Mono に確保された最大サイズは変わらないため、メモリの節約にはならないのだ。<br>
+つまり、Mono の消費メモリを少なくしたいなら、<strong>瞬間的にすら大量の Mono メモリを扱ってはならない</strong>。</p>
+
+<p>そして、AssetBundle は、前述の無圧縮の問題があるため、<code>WWW.LoadFromCacheOrDownload</code> を使うことはできない。<br>
+そのような場合、<code>WWW</code> を使って AssetBundle をダウンロードすることになるのだが、<code>WWW</code> でダウンロードした結果は <code>WWW.bytes</code> に入っていて、これは <strong>Mono のメモリを使っている</strong> 。<br>
+あるいは圧縮した AssetBundle のファイルを読み込んで <code>AssetBundle.CreateFromMemory(byte[])</code> を使う場合にも、そのバッファは <strong>Mono のメモリを使う</strong> ことになる。</p>
+
+<p>つまり、大きいサイズの AssetBundle を使うと、ダウンロードしたりロードする際に、瞬間的に大量の Mono メモリを取ることになる。<br>
+そのせいで Mono メモリの最大サイズが増えてしまって、アプリケーション全体のメモリ領域を圧迫することになるのだ。</p>
+
+<p>圧縮した AssetBundle をストリーミングで読み込むなりの機能が存在しない AssetBundle、クソである。</p>
+
+<h1>
+<span id="重複アセットを消すのが難しい" class="fragment"></span><a href="#%E9%87%8D%E8%A4%87%E3%82%A2%E3%82%BB%E3%83%83%E3%83%88%E3%82%92%E6%B6%88%E3%81%99%E3%81%AE%E3%81%8C%E9%9B%A3%E3%81%97%E3%81%84"><i class="fa fa-link"></i></a>重複アセットを消すのが難しい</h1>
+
+<p>ある AssetBundle に含まれるプレハブが参照しているアセットと、別の AssetBundle に含まれるプレハブが参照しているアセットが同じだった場合、それらのアセットは別のアセットとしてそれぞれの AssetBundle に含まれてしまう。<br>
+これはファイルサイズ的にもメモリ的にも無駄である。</p>
+
+<p>これを何とかするには、以下の方法が考えられる。</p>
+
+<ul>
+<li>同じアセットを参照しているプレハブを１つの AssetBundle にする</li>
+<li>同じアセットを参照しているプレハブは１つのプレハブにマージしてしまう</li>
+<li>
+<code>AssetBundle.PushDependencies</code> を使う</li>
+</ul>
+
+<p>しかし、複数のプレハブを１つの AssetBundle にしたり１つのプレハブにマージするという方法は、あまりやり過ぎると、前述した「大きいサイズの AssetBundle が使えない」という問題に引っかかる。<br>
+また、大きいサイズの AssetBundle は、一部のリソースに更新を掛けるだけで大量のデータをユーザにダウンロードさせることになるため、その点でも問題がある。<br>
+あと、全てのプレハブについてこれを手動でやるのは、かなりキツい。</p>
+
+<p><code>AssetBundle.PushDependencies</code> を使うのは、<a href="http://docs.unity3d.com/ScriptReference/BuildPipeline.PushAssetDependencies.html" rel="nofollow noopener" target="_blank">サンプル</a>を見ただけで、使うのがかなり難しいというのが分かる。<br>
+これをまともに使うには、どのプレハブがどのアセットを参照するのかを理解した上で AssetBundle を生成し、ロードする際にも正しい順番で AssetBundle をロードしなければならない。<br>
+数十個の AssetBundle なら何とかなるかもしれないが、数千個の AssetBundle でそれをやるのは、かなり難しいだろう。</p>
+
+<p>これは根本的に AssetBundle の仕組みが悪い。<br>
+普通の Resource 以下にあるデータなら、こんなことは考えずにプレハブを作ることができていたのに、AssetBundle 化する時に、いきなり複雑な依存関係を意識しなければならなくなっているのだ。</p>
+
+<p>「このフォルダ以下を AssetBundle 化する」とかやると、適切なサイズに分割されたファイルが作られ、プレハブをロードしようとしたら、分割されたファイルから必要なファイルを集めてプレハブを構築してくれる、しかも更新があった際のデータも簡単に作れる、みたいな機能があればベストだと思う。<br>
+それが無理でも、もっと依存関係を簡単に調べてリアルタイムで警告を出してくれるツールみたいなのが欲しいところである。<br>
+<code>AssetDatabase.GetDependencies</code> だけで逆参照を調べるのはかなり大変なのだ。</p>
+
+<p>重複したアセットを消したいだけなのにここまで苦労させる AssetBundle はクソだ。</p>
+
+<h1>
+<span id="スクリプトを含めるのが難しい" class="fragment"></span><a href="#%E3%82%B9%E3%82%AF%E3%83%AA%E3%83%97%E3%83%88%E3%82%92%E5%90%AB%E3%82%81%E3%82%8B%E3%81%AE%E3%81%8C%E9%9B%A3%E3%81%97%E3%81%84"><i class="fa fa-link"></i></a>スクリプトを含めるのが難しい</h1>
+
+<p>スクリプトを関連付けているプレハブを AssetBundle 化するのは、可能である。<br>
+しかし、この AssetBundle 内には、スクリプト本体が含まれている訳ではなく、スクリプトへの参照や CRC などを保持しているだけである。<br>
+そしてこの AssetBundle のロード時に、アプリケーション本体にあるスクリプトを関連付ける。</p>
+
+<p>これはつまり、スクリプトを AssetBundle で配信できないことを意味する。<br>
+スクリプト本体が AssetBundle に含まれないからだ。<br>
+ただ、これに関しては、iOS などの JIT コンパイルが不可能な環境のことを考慮すると仕方が無いだろう。</p>
+
+<p>それよりも致命的な問題がある。<br>
+<strong>アプリケーション本体を更新すると、AssetBundle のロードに失敗する可能性がある</strong> ということだ。<br>
+ダウンロードした AssetBundle に全く手を入れてないにも関わらず、である。</p>
+
+<p>先ほど「AssetBundle のロード時に、アプリケーション本体にあるスクリプトを関連付ける」と書いたが、実際には、このスクリプトを関連付ける際に、AssetBundle 生成時に参照しているスクリプトの CRC と、アプリケーション本体に入っているスクリプトの CRC が一致しているかどうかを見ている。<br>
+そのため、アプリケーションの更新に AssetBundle 化したプレハブが参照しているスクリプトが含まれていた場合、それを参照している AssetBundle は<strong>全てロードに失敗する</strong>。新しく生成し直した AssetBundle をダウンロードしてくるしか無い。</p>
+
+<p>スクリプト１つ更新しただけで、プレハブに関連付けられていたデータを全て落とし直すことになる。ユーザにとってはいい迷惑である。クソだ。</p>
+
+<h1>
+<span id="互換性が無い" class="fragment"></span><a href="#%E4%BA%92%E6%8F%9B%E6%80%A7%E3%81%8C%E7%84%A1%E3%81%84"><i class="fa fa-link"></i></a>互換性が無い</h1>
+
+<p>AssetBundle が Unity のどのバージョンで互換性があるか、公式でははっきりとは書かれていない。<br>
+Unity は好きなタイミングで互換性を壊すことができる。<br>
+そして互換性が無い場合、<strong>全ての AssetBundle のロードに失敗</strong>する。<br>
+つまりアプリケーションのユーザは<strong>全ての AssetBundle をダウンロードし直さなければならない</strong>。<br>
+開発者は、いつ互換性が無くなるか分からないという爆弾を抱えながら AssetBundle を作ることになる。<br>
+そしてユーザは、開発者の都合で数百MBのファイルをダウンロードし直さなければならなくなるのだ。</p>
+
+<p>最近、チーム全体で Unity を 4.5.1 から 4.5.5p5 に上げたが、AssetBundle の互換性は無かった。<br>
+ユーザは、<strong>数百MBのファイルをダウンロードし直し</strong>である。</p>
+
+<p>なお、4.5.1 は2014年7月から使い始めた。<br>
+チーム全体で 4.5.5p に上げたのは2014年11月のことである。<br>
+7月から11月まで、AssetBundle は<strong>わずか4ヶ月の命</strong>だった。</p>
+
+<p>Unity は１〜２週間に１回のペースでマイクロバージョンアップ、あるいはパッチリリースを行っている。<br>
+今現在、既に 4.6.1p2 が出ているが、マイクロバージョンが上がっただけで無くなっていた互換性だ、マイナーバージョンが上がったのなら恐らく互換性は無いだろう。</p>
+
+<p>バージョンがすぐに上がる割に互換性の無い AssetBundle、クソだ。</p>
+
+<h1>
+<span id="ビルドが遅い" class="fragment"></span><a href="#%E3%83%93%E3%83%AB%E3%83%89%E3%81%8C%E9%81%85%E3%81%84"><i class="fa fa-link"></i></a>ビルドが遅い</h1>
+
+<p>今の環境だと、全ての AssetBundle を生成するのに<strong>３時間</strong>掛かる。<br>
+使ってるマシンはかなり高性能なマシンであるはずの Mac Pro である。</p>
+
+<p>今のプロジェクトでは、前述したメモリの問題や、更新分のダウンロードが難しいので、１アセット（＋依存ファイル）ずつ AssetBundle を生成している。<br>
+そのため AssetBundle の数が 2500 個以上あるのだが、それでも３時間は掛かり過ぎだ。</p>
+
+<p>これを解決するために、更新の無いファイルは何もしないような処理を自分で書かなければならなかった。<br>
+Unity は、もっと AssetBundle の生成処理を速くするか、無駄な AssetBundle の生成をしないといった処理を入れるべきだろう。<br>
+あるいは、小さな AssetBundle を大量に作らないといけないような状態になっているのを解決すべきだろう。</p>
+
+<p>まあとにかく、クソだ。</p>
+
+<h1>
+<span id="おわりに" class="fragment"></span><a href="#%E3%81%8A%E3%82%8F%E3%82%8A%E3%81%AB"><i class="fa fa-link"></i></a>おわりに</h1>
+
+<p>ここまで、AssetBundle のクソな点をひたすら書いてきた。<br>
+最後に特大のクソを紹介しよう。<br>
+これだけクソな AssetBundle なのだが、<strong>現状は使わざるを得ない</strong> というのが最大級のクソである。</p>
+
+<p>プレハブを問題なくシリアライズし、ロード時にこれだけ高速に組み立てられるのは、恐らく AssetBundle だけであるからだ。<br>
+一応 Asset Store にもプレハブをシリアライズするパッケージはあるが、内部構造が変わると使えなくなるだろうし、ロード時に高速に組み立てるのも無理だろう。</p>
+
+<p>Unity はわざとプレハブをシリアライズできないようにしているのだと思う。<br>
+シリアライズ、デシリアライズが高速にできるなら、Unity ユーザは、Unity Pro を使ってまでして AssetBundle を使おうとはせず、Asset Store から適当なのを使うからだ。</p>
+
+<p>実行時に自前でプレハブを組み立てる、あるいはアプリケーション本体の中にプレハブのデータだけ入れておいて、自前でリソースをセットするという方法もあるが、前者は組み立てに時間が掛かるだろうし、後者はプレハブの修正を AssetBundle のダウンロードで解決できない。</p>
+
+<p>これだけクソであっても使わざるを得ない AssetBundle、最後までクソだった。</p>

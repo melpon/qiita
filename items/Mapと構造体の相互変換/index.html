@@ -1,0 +1,118 @@
+<p>Mapと構造体は非常に似ています。</p>
+
+<p>構造体は、単に <code>:__struct__</code> というキーを持っているだけのMapです。<br>
+詳細は<a href="http://elixir-lang.org/getting-started/structs.html" rel="nofollow noopener" target="_blank">構造体のドキュメント</a>を読んでもらうとして、Mapと構造体を相互変換する方法についていくつか書きます。</p>
+
+<h2>
+<span id="正攻法" class="fragment"></span><a href="#%E6%AD%A3%E6%94%BB%E6%B3%95"><i class="fa fa-link"></i></a>正攻法</h2>
+
+<p>Map→構造体には、<code>Kernel.struct/2</code>を使います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">User</span> <span class="k">do</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">:name</span><span class="p">]</span>
+<span class="k">end</span>
+
+<span class="n">map</span> <span class="o">=</span> <span class="p">%{</span><span class="ss">name:</span> <span class="s2">"melpon"</span><span class="p">}</span>
+
+<span class="n">user</span> <span class="o">=</span> <span class="n">struct</span><span class="p">(</span><span class="no">User</span><span class="p">,</span> <span class="n">map</span><span class="p">)</span>
+</pre></div></div>
+
+<p>構造体→Mapには、<code>Map.from_struct/1</code> を使います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="o">^</span><span class="n">map</span> <span class="o">=</span> <span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
+</pre></div></div>
+
+<p>なぜ片方が <code>Map</code> モジュールなのに、もう片方が <code>Kernel</code> モジュールにあるのか、という疑問はあるものの、簡単ですね。</p>
+
+<p>これだけだと面白くないので、もう少しいろんな方法を考えてみましょう。</p>
+
+<h2>
+<span id="__struct__-を直接弄る" class="fragment"></span><a href="#__struct__-%E3%82%92%E7%9B%B4%E6%8E%A5%E5%BC%84%E3%82%8B"><i class="fa fa-link"></i></a><code>:__struct__</code> を直接弄る</h2>
+
+<p>冒頭に書いたように、構造体は単に <code>:__struct__</code> があるかどうかだけの違いしか無いので、直接それを入れるだけで構造体として扱われるようになります。</p>
+
+<p>Map→構造体</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="o">^</span><span class="n">user</span> <span class="o">=</span> <span class="no">Map</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">map</span><span class="p">,</span> <span class="ss">:__struct__</span><span class="p">,</span> <span class="no">User</span><span class="p">)</span>
+</pre></div></div>
+
+<p>構造体→Map</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>^map = Map.delete(user, :__struct__)
+</pre></div></div>
+
+<h2>
+<span id="マージする" class="fragment"></span><a href="#%E3%83%9E%E3%83%BC%E3%82%B8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>マージする</h2>
+
+<p><code>%User{}</code>と書くと、デフォルト値で初期化された構造体になるので、これにマップの内容をマージすることで構造体を作れます。</p>
+
+<p>Map→構造体</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="o">^</span><span class="n">user</span> <span class="o">=</span> <span class="no">Map</span><span class="o">.</span><span class="n">merge</span><span class="p">(%</span><span class="no">User</span><span class="p">{},</span> <span class="n">map</span><span class="p">)</span>
+</pre></div></div>
+
+<h2>
+<span id="おまけ-jsonのmapから構造体を作る" class="fragment"></span><a href="#%E3%81%8A%E3%81%BE%E3%81%91-json%E3%81%AEmap%E3%81%8B%E3%82%89%E6%A7%8B%E9%80%A0%E4%BD%93%E3%82%92%E4%BD%9C%E3%82%8B"><i class="fa fa-link"></i></a>おまけ: JSONのMapから構造体を作る</h2>
+
+<p>JSONの文字列を、例えば<a href="https://github.com/devinus/poison" rel="nofollow noopener" target="_blank"><code>Poison</code>モジュール</a>を使い、<code>as:</code>パラメータを指定せずデコードした場合、Map型になります。<br>
+その際、キーはアトムではなく、文字列になってしまいます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">map</span> <span class="o">=</span> <span class="no">Poison</span><span class="o">.</span><span class="n">decode!</span><span class="p">(</span><span class="s2">"{</span><span class="se">\"</span><span class="s2">name</span><span class="se">\"</span><span class="s2">: </span><span class="se">\"</span><span class="s2">melpon</span><span class="se">\"</span><span class="s2">}"</span><span class="p">)</span>
+<span class="c1"># map == %{"name" =&gt; "melpon"}</span>
+</pre></div></div>
+
+<p>このデータから構造体を作りたい場合は、上記に書いている方法だと作れません。<br>
+また、キーの <code>"name"</code> を <code>:name</code> アトムに変換するのは、<a href="http://qiita.com/KOU_CHANG/items/c5eef2c5e6dc35b3fd65" id="reference-ecf1b57f56059b4c81fd">可能な限り避けるべき</a>です。<br>
+特にこの JSON が HTTP の POST パラメータに入っているデータである場合は、絶対にやめましょう。</p>
+
+<p>ではどうやって変換するかというと、以下のようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">map</span> <span class="o">=</span> <span class="p">%{</span><span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="s2">"melpon"</span><span class="p">}</span>
+
+<span class="n">empty</span> <span class="o">=</span> <span class="p">%</span><span class="no">User</span><span class="p">{}</span>
+<span class="n">elements</span> <span class="o">=</span> <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">empty</span><span class="p">),</span>
+                    <span class="k">fn</span> <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">-&gt;</span>
+                      <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="no">Map</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">map</span><span class="p">,</span> <span class="no">Atom</span><span class="o">.</span><span class="n">to_string</span><span class="p">(</span><span class="n">k</span><span class="p">))}</span>
+                    <span class="k">end</span><span class="p">)</span>
+<span class="n">user</span> <span class="o">=</span> <span class="n">struct</span><span class="p">(</span><span class="no">User</span><span class="p">,</span> <span class="n">elements</span><span class="p">)</span>
+</pre></div></div>
+
+<p>戦略的には、</p>
+
+<ol>
+<li>
+<code>User</code>構造体のキーの一覧を取得して、</li>
+<li>それらを文字列に変換し、Mapから値を取得して、</li>
+<li>構造体を構築する。</li>
+</ol>
+
+<p>となります。</p>
+
+<p>構造体のキーの一覧を取得するには、まずデフォルト値で初期化された構造体 <code>empty</code> を作り、それを <code>Map.from_struct(empty)</code> で Map に変換すれば取得できます。</p>
+
+<p>このキー <code>k</code> はアトム型であるため、それを <code>Atom.to_string(k)</code> で文字列に変換しています。<br>
+その変換した文字列をキーに、 <code>Map.fetch!/2</code> で <code>map</code> を検索します。<br>
+今回のケースでは、構造体の値が無ければエラーにするという方針でやっていますが、これはアプリケーションのポリシーによって変わる部分でしょう。</p>
+
+<p><code>map</code>から値が取れれば、あとは <code>struct(User, elements)</code> で構造体を作るだけです。</p>
+
+<p>もう少し汎用的にすれば、以下のようになるでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Util</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">jsonmap_to_struct</span><span class="p">(</span><span class="n">jsonmap</span><span class="p">,</span> <span class="n">struct_type</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">empty</span> <span class="o">=</span> <span class="n">struct</span><span class="p">(</span><span class="n">struct_type</span><span class="p">)</span>
+    <span class="n">elements</span> <span class="o">=</span> <span class="no">Enum</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">empty</span><span class="p">),</span>
+                        <span class="k">fn</span> <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">-&gt;</span>
+                          <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="no">Map</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">jsonmap</span><span class="p">,</span> <span class="no">Atom</span><span class="o">.</span><span class="n">to_string</span><span class="p">(</span><span class="n">k</span><span class="p">))}</span>
+                        <span class="k">end</span><span class="p">)</span>
+    <span class="n">struct</span><span class="p">(</span><span class="n">struct_type</span><span class="p">,</span> <span class="n">elements</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Util</span><span class="o">.</span><span class="n">jsonmap_to_struct</span><span class="p">(%{</span><span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="s2">"melpon"</span><span class="p">},</span> <span class="no">User</span><span class="p">)</span>
+<span class="c1"># → %User{name: "melpon"}</span>
+</pre></div></div>
+
+<p>このように、JSON の Map から構造体にするのは、少し手間が掛かります。<br>
+しかし <code>user.name</code> のようにアクセスできるのは非常に便利であるし、理解しやすくなるため、JSON の Map は、可能なら構造体に入れておいた方がいいでしょう。</p>

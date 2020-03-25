@@ -1,0 +1,166 @@
+<p>EUnitでテストコードを増やしていくと、突如としてテストが通らなくなることがあります。</p>
+
+<h2>
+<span id="導入" class="fragment"></span><a href="#%E5%B0%8E%E5%85%A5"><i class="fa fa-link"></i></a>導入</h2>
+
+<p>例えば元のコードが以下のようになっていた時、</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nf">do_something</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">1000</span><span class="p">),</span> <span class="c">% 処理を待つ
+</span>    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">10</span><span class="p">),</span> <span class="c">% 処理結果を取得
+</span>
+    <span class="nf">do_something2</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">2000</span><span class="p">),</span>
+    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">20</span><span class="p">),</span>
+
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div></div>
+
+<p>このコードに対して、以下のように同じようなコードを追加すると、なんとテストが通らなくなります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nf">do_something</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">1000</span><span class="p">),</span> <span class="c">% 処理を待つ
+</span>    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">10</span><span class="p">),</span> <span class="c">% 処理結果を取得
+</span>
+    <span class="nf">do_something</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">2000</span><span class="p">),</span>
+    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">20</span><span class="p">),</span>
+
+    <span class="c">%% ここが追加した部分
+</span>    <span class="nf">do_something</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">3000</span><span class="p">),</span>
+    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">30</span><span class="p">),</span>
+
+    <span class="n">ok</span><span class="p">.</span>
+</pre></div></div>
+
+<p>しかもこの時のエラーメッセージはこのようになっています。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>===&gt; Performing EUnit tests...
+
+Pending:
+  myapp_foo_tests:foo_test/0: module 'myapp_foo_tests'
+    %% Unknown error: timeout
+  undefined
+    %% Unknown error: {blame,[1]}
+
+
+Finished in ? seconds
+2 tests, 0 failures, 2 cancelled
+===&gt; Error running tests
+</pre></div></div>
+
+<p>通常、テストに失敗したら、失敗した場所からのスタックトレースが表示されるはずなのに、なぜかそのような情報がありません。<br>
+役に立ちそうな情報が無いため、エラーメッセージから原因を調べるのは難しそうです。</p>
+
+<p>そのため、多くの場合は、「あの追加したコードでエラーが発生するということは、<code>do_something()</code>を３回呼ぶと失敗するバグがあるのか？」と<code>do_something/0</code>を調べに行くでしょう。<br>
+そこに問題は無さそうということになれば、スリープ時間を弄ったり、1回目や2回目の<code>do_something()</code>呼び出しを消してみたり、増やしてみたり等をやって、テストが通ったり通らなかったりするのを見て、どのコードに問題があるのかと時間を費やすわけです。</p>
+
+<h2>
+<span id="原因" class="fragment"></span><a href="#%E5%8E%9F%E5%9B%A0"><i class="fa fa-link"></i></a>原因</h2>
+
+<p>これは <strong>EUnitがテストを5秒で打ち切る</strong> ために起きています。<br>
+そしてEUnitがテストを打ち切ると、上記のような <strong>訳の分からないエラーメッセージ</strong> を表示します。</p>
+
+<p>これはほんとクソだと思うのですが、原因さえ分かってしまえばあとは簡単です。</p>
+
+<h2>
+<span id="修正" class="fragment"></span><a href="#%E4%BF%AE%E6%AD%A3"><i class="fa fa-link"></i></a>修正</h2>
+
+<p>テストコードを以下のように修正します。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="nf">do_something</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">1000</span><span class="p">),</span> <span class="c">% 処理を待つ
+</span>    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something</span><span class="p">(),</span> <span class="mi">10</span><span class="p">),</span> <span class="c">% 処理結果を取得
+</span>
+    <span class="nf">do_something2</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">2000</span><span class="p">),</span>
+    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something2</span><span class="p">(),</span> <span class="mi">20</span><span class="p">),</span>
+
+    <span class="nf">do_something3</span><span class="p">(),</span>
+    <span class="nn">timer</span><span class="p">:</span><span class="nf">sleep</span><span class="p">(</span><span class="mi">3000</span><span class="p">),</span>
+    <span class="o">?</span><span class="nf">assertEqual</span><span class="p">(</span><span class="nf">read_something3</span><span class="p">(),</span> <span class="mi">30</span><span class="p">),</span>
+
+    <span class="n">ok</span><span class="p">.</span>
+
+<span class="nf">foo_test_</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="c">%% タイムアウトを7秒に設定する
+</span>    <span class="p">{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}.</span>
+</pre></div></div>
+
+<p>まず、<code>foo_test()</code>を<code>foo()</code>という名前に変えています。<br>
+これは、テスト処理をテスト対象から外すためです。実際のテスト処理はテストジェネレータから呼ぶようにします。</p>
+
+<p>そして <code>foo_test_()</code> というテストジェネレータを用意し、タイムアウトのパラメータを設定した上で <code>foo/0</code> を呼ぶように設定します。</p>
+
+<p><code>{timeout, 7, fun foo/0}</code> というのがテストのタイムアウト時間を設定する方法で、これでテスト時間を7秒まで延ばすことができます。</p>
+
+<p>これでテストを実行すると、無事テストが通るはずです。<br>
+同じエラーが出るなら、更に時間を延ばしましょう。</p>
+
+<h2>
+<span id="応用" class="fragment"></span><a href="#%E5%BF%9C%E7%94%A8"><i class="fa fa-link"></i></a>応用</h2>
+
+<p>上記のテストで、タイムアウトを指定しない場合、単に <code>foo_test_() -&gt; fun foo/0.</code> と書くだけで構いません。<br>
+つまり <code>Tests</code> を <code>{timeout, N, Tests}</code> に置き換えることで、タイムアウトの設定ができます。</p>
+
+<p>タイムアウトの他にもいくつかオプションがありますが、このような置き換えをするだけで対応できます。<br>
+例えば子プロセスを起動してからテストを実行する <code>spawn</code> とタイムアウトと混ぜて使うなら、以下のようになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test_</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+     <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}}.</span>
+</pre></div></div>
+
+<p>さらにテストジェネレータは複数のテストを書けるので、以下のように書けます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test_</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="p">[{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+      <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}},</span>
+     <span class="p">{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+      <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}}].</span>
+</pre></div></div>
+
+<p>さらにこれらを並列に実行するようなオプション <code>inparallel</code> を指定すると、以下のようになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test_</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">inparallel</span><span class="p">,</span> <span class="p">[{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+                   <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}},</span>
+                  <span class="p">{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+                   <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}}]}.</span>
+</pre></div></div>
+
+<p>そして更に <code>setup</code> で開始時/終了時に呼ぶ関数を指定したりなんかもすると、以下のようになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test_</span><span class="p">()</span> <span class="o">-&gt;</span>
+    <span class="p">{</span><span class="n">setup</span><span class="p">,</span>
+     <span class="k">fun</span> <span class="n">setup</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span>
+     <span class="k">fun</span> <span class="n">cleanup</span><span class="o">/</span><span class="mi">1</span><span class="p">,</span>
+     <span class="p">{</span><span class="n">inparallel</span><span class="p">,</span> <span class="p">[{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+                    <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}},</span>
+                   <span class="p">{</span><span class="n">timeout</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span>
+                    <span class="p">{</span><span class="nb">spawn</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}}]}}.</span>
+</pre></div></div>
+
+<p>このように様々なオプションを組み合わせられるので、EUnitのドキュメントを読み、いろいろ組み合わせて使うといいでしょう<sup id="fnref1"><a href="#fn1" rel="footnote" title="正直ドキュメントの説明は分かりにくい（特に英語読むの辛い人には）">1</a></sup>。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/doc/apps/eunit/chapter.html" rel="nofollow noopener" target="_blank">Erlang -- EUnit - a Lightweight Unit Testing Framework for Erlang</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>正直ドキュメントの説明は分かりにくい（特に英語読むの辛い人には） <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

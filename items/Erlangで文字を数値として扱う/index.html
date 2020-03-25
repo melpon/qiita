@@ -1,0 +1,30 @@
+<p>Erlangでは時々、記号やアルファベット1文字を数字として書きたいことがあります。</p>
+
+<p>例えば以下のようなコード。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">is_fullpath</span><span class="p">(</span><span class="nv">Path</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="k">case</span> <span class="nn">binary</span><span class="p">:</span><span class="nf">first</span><span class="p">(</span><span class="nv">Path</span><span class="p">)</span> <span class="k">of</span>
+    <span class="mi">47</span> <span class="o">-&gt;</span> <span class="n">true</span><span class="p">;</span>  <span class="c">% '/' は ASCII コードで 47
+</span>    <span class="p">_</span> <span class="o">-&gt;</span> <span class="n">false</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p><code>47</code>とかいうマジックナンバーが出てて酷い。<br>
+マクロを使うという手もありますが、何とか別の方法で書けないかと調べたら、ありました。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">is_fullpath</span><span class="p">(</span><span class="nv">Path</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="k">case</span> <span class="nn">binary</span><span class="p">:</span><span class="nf">first</span><span class="p">(</span><span class="nv">Path</span><span class="p">)</span> <span class="k">of</span>
+    <span class="sc">$/</span> <span class="o">-&gt;</span> <span class="n">true</span><span class="p">;</span>
+    <span class="p">_</span> <span class="o">-&gt;</span> <span class="n">false</span>
+  <span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p><code>$/</code>とか<code>$a</code>とか書くことで１文字を表せるようです。知らなかった…。</p>
+
+<p>なおこの機能、日本語を使うこともできます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="sc">$あ</span><span class="p">.</span>
+<span class="mi">12354</span>
+</pre></div></div>
+
+<p>Unicodeのコードポイント値になります。</p>

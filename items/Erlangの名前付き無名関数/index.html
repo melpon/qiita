@@ -1,0 +1,61 @@
+<p><a href="https://www.amazon.co.jp/dp/B00MLUGZIS" rel="nofollow noopener" target="_blank">すごいE本</a>を読んでいると、以下の記述を見つけました。</p>
+
+<blockquote>
+<p>[訳注] 17.0から無名関数に名前が付けられるようになりました。</p>
+</blockquote>
+
+<p>無名関数に名前とはこれいかに、と思って調べてみました。</p>
+
+<h2>
+<span id="使い方" class="fragment"></span><a href="#%E4%BD%BF%E3%81%84%E6%96%B9"><i class="fa fa-link"></i></a>使い方</h2>
+
+<p>以下のように使えます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nv">Fac</span> <span class="o">=</span> <span class="k">fun</span> <span class="nv">Fac</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="mi">1</span><span class="p">;</span>
+          <span class="nv">Fac</span><span class="p">(</span><span class="nv">N</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nv">N</span> <span class="o">*</span> <span class="nv">Fac</span><span class="p">(</span><span class="nv">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+      <span class="k">end</span><span class="p">,</span>
+<span class="nn">io</span><span class="p">:</span><span class="nf">format</span><span class="p">(</span><span class="s">"</span><span class="si">~p~n</span><span class="s">"</span><span class="p">,</span> <span class="p">[</span><span class="nv">Fac</span><span class="p">(</span><span class="mi">5</span><span class="p">)]).</span>
+</pre></div></div>
+
+<p>このように無名関数に名前を付けることで、無名関数内で再帰ができるようになります。</p>
+
+<h2>
+<span id="yコンビネータ" class="fragment"></span><a href="#y%E3%82%B3%E3%83%B3%E3%83%93%E3%83%8D%E3%83%BC%E3%82%BF"><i class="fa fa-link"></i></a>Yコンビネータ</h2>
+
+<p>R17以前で、無名関数で再帰をしたい場合、以下のように書く必要がありました。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>Fac = fun (N) -&gt;
+        F = fun (_, 0) -&gt; 1;
+                (F, M) -&gt; M * F(F, M - 1)
+            end,
+        F(F, N)
+      end,
+io:format("~p~n", [Fac(5)]).
+</pre></div></div>
+
+<p>いわゆるYコンビネータです<sup id="fnref1"><a href="#fn1" rel="footnote" title="微妙に定義から外れてる気もするけど、参考ページもYコンビネータって言ってるので気にしない。">1</a></sup>。<br>
+こんなの朝飯前だって言いながら書ける＆読める初心者（自称を除く）はそんなに居ないため、R17で名前を付けて再帰できるようにしたというのが大枠の流れのようです。</p>
+
+<h2>
+<span id="おまけ" class="fragment"></span><a href="#%E3%81%8A%E3%81%BE%E3%81%91"><i class="fa fa-link"></i></a>おまけ</h2>
+
+<p>なお<a href="http://qiita.com/niku/items/bc13fa5f7e46ac236fec" id="reference-d74271a51830b44f10b5">Elixirだと無名関数に名前を付けられない</a>ようです。<br>
+なぜだ後発言語。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://joearms.github.io/2014/02/01/big-changes-to-erlang.html#head_2" rel="nofollow noopener" target="_blank">Names in Funs</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>微妙に定義から外れてる気もするけど、参考ページもYコンビネータって言ってるので気にしない。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

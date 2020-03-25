@@ -1,0 +1,22 @@
+<p>ほんとだ、完全に読み間違えてました。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="n">size_type</span> <span class="n">capacity</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="p">(</span><span class="n">__is_long</span><span class="p">()</span> <span class="o">?</span> <span class="n">__get_long_cap</span><span class="p">()</span>
+                             <span class="o">:</span> <span class="k">static_cast</span><span class="o">&lt;</span><span class="n">size_type</span><span class="o">&gt;</span><span class="p">(</span><span class="n">__min_cap</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;}</span>
+</pre></div></div>
+
+<p>を、</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="n">size_type</span> <span class="n">capacity</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="n">__is_long</span><span class="p">()</span> <span class="o">?</span> <span class="n">__get_long_cap</span><span class="p">()</span>
+                            <span class="o">:</span> <span class="k">static_cast</span><span class="o">&lt;</span><span class="n">size_type</span><span class="o">&gt;</span><span class="p">(</span><span class="n">__min_cap</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;}</span>
+</pre></div></div>
+
+<p>と見ていて <code>__min_cap</code> に対してだけ -1 してるものだと思ってました。<br>
+ありがとうございます。修正しておきました！</p>
+
+<blockquote>
+<p>個人的には、__set_long_cap() と __get_long_cap() が再開 bit をオンオフした上で関数呼び出し側で +1 したり -1 したりするのが今一つ意味が分からないですが。+1 や -1 しないでそのまま取得設定しろよ、と…</p>
+</blockquote>
+
+<p><code>capacity()</code> で -1 しているのは、内部で <code>__get_long_cap()</code> （NULL 含むキャパシティ取得）単体で使うケースと <code>capacity()</code> （NULL 含まないキャパシティ取得）単体で使うケースを考えると、これでいいんじゃないかなと思います。</p>

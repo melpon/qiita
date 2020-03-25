@@ -1,0 +1,2 @@
+Improper listをrandモジュールのexsplusアルゴリズムに採用したのはDan Gudmundssonの発案です。exsplusアルゴリズムは64bit環境においてrandomモジュールに匹敵する速度を出していますので、まさに「カツカツの高速化」だと思います。
+

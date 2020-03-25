@@ -1,0 +1,109 @@
+<p>Erlangには標準のHTTPクライアントとして <a href="http://erlang.org/doc/man/httpc.html" rel="nofollow noopener" target="_blank">httpc</a> があります。</p>
+
+<p>これを使えば簡単にHTTPでデータを受信できます。</p>
+
+<h2>
+<span id="簡単な使い方" class="fragment"></span><a href="#%E7%B0%A1%E5%8D%98%E3%81%AA%E4%BD%BF%E3%81%84%E6%96%B9"><i class="fa fa-link"></i></a>簡単な使い方</h2>
+
+<p><code>applicaion:start(inets)</code>でアプリケーションを起動しておいて、<code>httpc:request/1</code>でリクエストを投げれば、GETリクエストを適当に送信します。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">application</span><span class="p">:</span><span class="nf">start</span><span class="p">(</span><span class="n">inets</span><span class="p">).</span>
+<span class="n">ok</span>
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">httpc</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="s">"http://example.com/"</span><span class="p">).</span>
+<span class="p">{</span><span class="n">ok</span><span class="p">,{{</span><span class="s">"HTTP/1.1"</span><span class="p">,</span><span class="mi">200</span><span class="p">,</span><span class="s">"OK"</span><span class="p">},</span>
+     <span class="p">[{</span><span class="s">"cache-control"</span><span class="p">,</span><span class="s">"max-age=604800"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"date"</span><span class="p">,</span><span class="s">"Sun, 18 Dec 2016 10:55:37 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"accept-ranges"</span><span class="p">,</span><span class="s">"bytes"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"etag"</span><span class="p">,</span><span class="s">"</span><span class="se">\"</span><span class="s">359670651</span><span class="se">\"</span><span class="s">"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"server"</span><span class="p">,</span><span class="s">"ECS (rhv/818F)"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"vary"</span><span class="p">,</span><span class="s">"Accept-Encoding"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"content-length"</span><span class="p">,</span><span class="s">"1270"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"content-type"</span><span class="p">,</span><span class="s">"text/html"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"expires"</span><span class="p">,</span><span class="s">"Sun, 25 Dec 2016 10:55:37 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"last-modified"</span><span class="p">,</span><span class="s">"Fri, 09 Aug 2013 23:54:35 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"x-cache"</span><span class="p">,</span><span class="s">"HIT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"x-ec-custom-error"</span><span class="p">,</span><span class="s">"1"</span><span class="p">}],</span>
+     <span class="s">"&lt;!doctype html&gt;</span><span class="se">\n</span><span class="s">&lt;html&gt;</span><span class="se">\n</span><span class="s">&lt;head&gt;</span><span class="se">\n</span><span class="s">    &lt;title&gt;Example Domain&lt;/title&gt;</span><span class="se">\n</span><span class="s">..."</span><span class="p">}}</span>
+</pre></div></div>
+
+<p><code>httpc:request(Url)</code>は単純に<code>httpc:request(get, {Url, []}, [], [])</code>を呼び出しているだけなので、メソッドやオプションをカスタマイズしたい場合は <code>http:request/4</code> あるいは <code>http:request/5</code> を呼び出す必要があります。</p>
+
+<p>個人的によく使うオプションは<code>body_format</code>と<code>full_result</code>です。</p>
+
+<h2>
+<span id="body_format" class="fragment"></span><a href="#body_format"><i class="fa fa-link"></i></a>body_format</h2>
+
+<p><code>httpc:request/1</code>はレスポンスボディをリストで返すので、ちょっと微妙な気分になります。<sup id="fnref1"><a href="#fn1" rel="footnote" title="しかも実装を見ると、レスポンスボディを一度バイナリで受け取った後に binary_to_list/1 で変換して返しているので、効率的にはとても良くない">1</a></sup></p>
+
+<p>そういうときは <code>httpc:request/4</code> を使います。<br>
+<code>{body_format, binary}</code> というオプションを指定することで、レスポンスボディをバイナリで受け取ることができます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">3</span><span class="o">&gt;</span> <span class="nn">httpc</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="p">{</span><span class="s">"http://example.com/"</span><span class="p">,</span> <span class="p">[]},</span> <span class="p">[],</span> <span class="p">[{</span><span class="n">body_format</span><span class="p">,</span> <span class="n">binary</span><span class="p">}]).</span> 
+<span class="p">{</span><span class="n">ok</span><span class="p">,{{</span><span class="s">"HTTP/1.1"</span><span class="p">,</span><span class="mi">200</span><span class="p">,</span><span class="s">"OK"</span><span class="p">},</span>
+     <span class="p">[{</span><span class="s">"cache-control"</span><span class="p">,</span><span class="s">"max-age=604800"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"date"</span><span class="p">,</span><span class="s">"Sun, 18 Dec 2016 11:49:36 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"accept-ranges"</span><span class="p">,</span><span class="s">"bytes"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"etag"</span><span class="p">,</span><span class="s">"</span><span class="se">\"</span><span class="s">359670651</span><span class="se">\"</span><span class="s">"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"server"</span><span class="p">,</span><span class="s">"ECS (rhv/818F)"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"vary"</span><span class="p">,</span><span class="s">"Accept-Encoding"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"content-length"</span><span class="p">,</span><span class="s">"1270"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"content-type"</span><span class="p">,</span><span class="s">"text/html"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"expires"</span><span class="p">,</span><span class="s">"Sun, 25 Dec 2016 11:49:36 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"last-modified"</span><span class="p">,</span><span class="s">"Fri, 09 Aug 2013 23:54:35 GMT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"x-cache"</span><span class="p">,</span><span class="s">"HIT"</span><span class="p">},</span>
+      <span class="p">{</span><span class="s">"x-ec-custom-error"</span><span class="p">,</span><span class="s">"1"</span><span class="p">}],</span>
+     <span class="o">&lt;&lt;</span><span class="s">"&lt;!doctype html&gt;</span><span class="se">\n</span><span class="s">&lt;html&gt;</span><span class="se">\n</span><span class="s">&lt;head&gt;</span><span class="se">\n</span><span class="s">    &lt;title&gt;Example Domain&lt;/title&gt;</span><span class="se">\n\n</span><span class="s">    &lt;meta charset=</span><span class="se">\"</span><span class="s">utf-8</span><span class="se">\"</span><span class="s"> /&gt;</span><span class="se">\n</span><span class="s">  "</span><span class="p">...</span><span class="o">&gt;&gt;</span><span class="p">}}</span>
+</pre></div></div>
+
+<h2>
+<span id="full_result" class="fragment"></span><a href="#full_result"><i class="fa fa-link"></i></a>full_result</h2>
+
+<p><code>http:request/4</code>の結果は<code>{ok, {status_line(), headers(), Body}}</code>という形式になっていますが、レスポンスヘッダや<code>"HTTP/1.1"</code>のプロトコルバージョンが不要な場合には<code>{full_result, false}</code>が使えます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">4</span><span class="o">&gt;</span> <span class="nn">httpc</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="p">{</span><span class="s">"http://example.com/"</span><span class="p">,</span> <span class="p">[]},</span> <span class="p">[],</span> <span class="p">[{</span><span class="n">body_format</span><span class="p">,</span> <span class="n">binary</span><span class="p">},</span> <span class="p">{</span><span class="n">full_result</span><span class="p">,</span> <span class="n">false</span><span class="p">}]).</span>
+<span class="p">{</span><span class="n">ok</span><span class="p">,{</span><span class="mi">200</span><span class="p">,</span>
+     <span class="o">&lt;&lt;</span><span class="s">"&lt;!doctype html&gt;</span><span class="se">\n</span><span class="s">&lt;html&gt;</span><span class="se">\n</span><span class="s">&lt;head&gt;</span><span class="se">\n</span><span class="s">    &lt;title&gt;Example Domain&lt;/title&gt;</span><span class="se">\n\n</span><span class="s">    &lt;meta charset=</span><span class="se">\"</span><span class="s">utf-8</span><span class="se">\"</span><span class="s"> /&gt;</span><span class="se">\n</span><span class="s">    &lt;m"</span><span class="p">...</span><span class="o">&gt;&gt;</span><span class="p">}}</span>
+</pre></div></div>
+
+<p>とてもシンプルな戻り値になります。<br>
+テスト用途で使うなら、この形式で十分でしょう。</p>
+
+<h2>
+<span id="post" class="fragment"></span><a href="#post"><i class="fa fa-link"></i></a>POST</h2>
+
+<p>POSTで送信する場合は以下のようにします。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">5</span><span class="o">&gt;</span> <span class="nn">httpc</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="n">post</span><span class="p">,</span>
+<span class="mi">5</span><span class="o">&gt;</span>               <span class="p">{</span><span class="s">"http://example.com/"</span><span class="p">,</span>
+<span class="mi">5</span><span class="o">&gt;</span>                <span class="p">[],</span>
+<span class="mi">5</span><span class="o">&gt;</span>                <span class="s">"application/json"</span><span class="p">,</span>
+<span class="mi">5</span><span class="o">&gt;</span>                <span class="o">&lt;&lt;</span><span class="s">"{</span><span class="se">\"</span><span class="s">foo</span><span class="se">\"</span><span class="s">: 100}"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+<span class="mi">5</span><span class="o">&gt;</span>               <span class="p">[],</span>
+<span class="mi">5</span><span class="o">&gt;</span>               <span class="p">[{</span><span class="n">body_format</span><span class="p">,</span> <span class="n">binary</span><span class="p">},</span>
+<span class="mi">5</span><span class="o">&gt;</span>                <span class="p">{</span><span class="n">full_result</span><span class="p">,</span> <span class="n">false</span><span class="p">}]).</span>
+<span class="p">{</span><span class="n">ok</span><span class="p">,{</span><span class="mi">200</span><span class="p">,</span>
+     <span class="o">&lt;&lt;</span><span class="s">"&lt;!doctype html&gt;</span><span class="se">\n</span><span class="s">&lt;html&gt;</span><span class="se">\n</span><span class="s">&lt;head&gt;</span><span class="se">\n</span><span class="s">    &lt;title&gt;Example Domain&lt;/title&gt;</span><span class="se">\n\n</span><span class="s">    &lt;meta charset=</span><span class="se">\"</span><span class="s">utf-8</span><span class="se">\"</span><span class="s"> /&gt;</span><span class="se">\n</span><span class="s">    &lt;m"</span><span class="p">...</span><span class="o">&gt;&gt;</span><span class="p">}}</span>
+</pre></div></div>
+
+<p>POST の場合は <code>httpc:request/4</code> の２番目の引数に <code>{url(), headers(), content_type(), body()}</code> という形式で渡します。<br>
+<code>body()</code>には文字列だったりバイナリだったり、あとは関数を渡してチャンクデータを送信することもできるようです。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>httpcは、ドキュメントを読むと意外（？）と多機能で、例えばクッキーやセッションの情報を保存してくれていたり、その保存先としてデフォルトではデフォルトプロファイルが使われますが、プロファイルを変えればそちらに保存したりもできます。</p>
+
+<p>ただ、httpcにはコネクションプールが無いし、HTTP1.0や1.1にしか対応していないため、高頻度でリクエストを投げるような処理には向いていないと思います。</p>
+
+<p>しかし標準で既に入っているという点はとても強いので、何らかのHTTPサーバを実装した際にテスト用に使うとか、数十秒に1回程度の頻度でネットワーク上にある設定を取得するために使うとか、そういうのに使うといいと思います。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>しかも実装を見ると、レスポンスボディを一度バイナリで受け取った後に <code>binary_to_list/1</code> で変換して返しているので、効率的にはとても良くない <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

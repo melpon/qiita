@@ -1,0 +1,562 @@
+<p>意外と複雑だったので、可能な限り情報を纏めてみました。</p>
+
+<h2>
+<span id="例外の種類" class="fragment"></span><a href="#%E4%BE%8B%E5%A4%96%E3%81%AE%E7%A8%AE%E9%A1%9E"><i class="fa fa-link"></i></a>例外の種類</h2>
+
+<p>Elixir の例外には throw と error と exit という３種類があります。<br>
+どの例外も、投げた直後に処理を抜けて <code>catch</code> や <code>rescue</code> に飛ぶ（あるいはそれが無ければプロセスが終了する）という点では同じです。</p>
+
+<h3>
+<span id="throw" class="fragment"></span><a href="#throw"><i class="fa fa-link"></i></a>throw</h3>
+
+<p>throw はフロー制御のための例外です。<br>
+Elixir は、関数の途中で return したり、ループで条件を満たしたら break するというのが出来ません。<br>
+そういう時、処理の流れ（フロー）を変えるために throw を利用します。</p>
+
+<p>throw を使うことで、例えば <a href="https://hexdocs.pm/elixir/Enum.html#find/3" rel="nofollow noopener" target="_blank"><code>Enum.find/2</code></a> のような関数は以下のように書けます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">find</span><span class="p">(</span><span class="n">enumerable</span><span class="p">,</span> <span class="n">default</span> <span class="p">\\</span> <span class="no">nil</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span> <span class="k">do</span>
+  <span class="k">try</span> <span class="k">do</span>
+    <span class="n">for</span> <span class="n">v</span> <span class="o">&lt;-</span> <span class="n">enumerable</span> <span class="k">do</span>
+      <span class="c1"># 値が見つかったら即終了</span>
+      <span class="k">if</span> <span class="n">fun</span><span class="o">.</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">do</span>
+        <span class="k">throw</span> <span class="n">v</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+    <span class="n">default</span>
+  <span class="k">catch</span>
+    <span class="n">found</span> <span class="o">-&gt;</span> <span class="n">found</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>例外を投げるには <a href="https://hexdocs.pm/elixir/Kernel.html#throw/1" rel="nofollow noopener" target="_blank"><code>throw/1</code></a> を使います。<br>
+<code>throw/1</code> で投げた例外は <code>catch</code> 節で上記のように書けば取得できます。</p>
+
+<p>また、throw は <strong>例外発生時のスタックトレースを取得しません</strong>。<br>
+そのため <code>catch</code> 節で <a href="https://hexdocs.pm/elixir/System.html#stacktrace/0" rel="nofollow noopener" target="_blank"><code>System.stacktrace/0</code></a> を実行しても情報は取れません。</p>
+
+<p>このように、throw はフロー制御のために投げるもので、確実に誰かが catch すると分かっている前提の機能です。<br>
+throw で投げた例外がモジュールやアプリケーションのレイヤーを越えたり、あるいはプロセスが落ちる可能性があるなら、それはほぼバグでしょう。</p>
+
+<h3>
+<span id="error" class="fragment"></span><a href="#error"><i class="fa fa-link"></i></a>error</h3>
+
+<p>error は、他の言語でよくある普通の例外と同じ用途で利用します。<br>
+つまり、ファイルが存在しなかったり、パターンマッチに失敗したり、関数に不正な引数を渡したりした場合に error を利用します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="k">raise</span> <span class="no">RuntimeError</span><span class="p">,</span> <span class="ss">message:</span> <span class="s2">"error"</span>
+<span class="k">rescue</span>
+  <span class="n">e</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"Error: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>Error: %RuntimeError{message: "error"}
+</pre></div></div>
+
+<p>error の例外を投げるには <a href="https://hexdocs.pm/elixir/Kernel.html#raise/1" rel="nofollow noopener" target="_blank"><code>raise/{1,2}</code></a> を使います。<br>
+<code>raise/{1,2}</code> で投げた例外は <code>rescue</code> 節で上記のように書けば取得できます。<br>
+他の方法でも取得できますが、詳細に関しては後で説明します。</p>
+
+<h3>
+<span id="exit" class="fragment"></span><a href="#exit"><i class="fa fa-link"></i></a>exit</h3>
+
+<p>exit は、プロセスを終了させるための例外です。<br>
+通常、この例外を捕まえて処理を継続させてはいけません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="k">exit</span> <span class="ss">:anyway_i_want_to_exit</span>
+<span class="k">catch</span>
+  <span class="ss">:exit</span><span class="p">,</span> <span class="n">reason</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"You should not exit yet: </span><span class="si">#{</span><span class="n">reason</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>You should not exit yet: anyway_i_want_to_exit
+</pre></div></div>
+
+<p>exit の例外を投げるには <a href="https://hexdocs.pm/elixir/Kernel.html#exit/1" rel="nofollow noopener" target="_blank"><code>exit/1</code></a> を使います。<br>
+<code>exit/1</code> で投げた例外は <code>catch</code> 節で上記のように書けば取得できます。</p>
+
+<h2>
+<span id="例外の捕捉について" class="fragment"></span><a href="#%E4%BE%8B%E5%A4%96%E3%81%AE%E6%8D%95%E6%8D%89%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>例外の捕捉について</h2>
+
+<p><a href="https://hexdocs.pm/elixir/Kernel.SpecialForms.html#try/1" rel="nofollow noopener" target="_blank"><code>try/1</code></a> ブロック内で投げた例外は、<code>rescue</code> や <code>catch</code> で捕まえられます。<br>
+ただし <code>rescue</code> や <code>catch</code> では仕様が全然違うので、仕様を理解して適切に使い分けましょう。</p>
+
+<h3>
+<span id="rescue-節" class="fragment"></span><a href="#rescue-%E7%AF%80"><i class="fa fa-link"></i></a><code>rescue</code> 節</h3>
+
+<p><code>rescue</code> 節は、通常のエラー、つまり error の例外だけを捕捉する目的で利用します。</p>
+
+<p><code>rescue</code> で受け取る際、特定の例外だけを捕まえることもできます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="o">...</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="no">RuntimeError</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># RuntimeError だけ捕まえる</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="p">[</span><span class="no">RuntimeError</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># 上に同じ</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="p">[</span><span class="no">RuntimeError</span><span class="p">,</span> <span class="no">ArgumentError</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># RuntimeError と ArgumentError だけ捕まえる</span>
+  <span class="n">error</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># 全ての error 例外を捕まえる</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>コメントにあるように <code>&lt;変数名&gt; in &lt;例外のモジュール名 or そのリスト&gt;</code> で特定の例外だけを捕まえます。<br>
+判定は上から順番に行われ、最初に一致した部分を実行します。</p>
+
+<p>逆に、<code>rescue</code> で受け取る際にパターンマッチを使うことはできません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="o">...</span>
+<span class="k">rescue</span>
+  <span class="p">%</span><span class="no">RuntimeError</span><span class="p">{</span><span class="ss">message:</span> <span class="n">message</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># コンパイルエラー！こういう書き方はできない</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h3>
+<span id="erlang-のエラーを-rescue-節で受け取る" class="fragment"></span><a href="#erlang-%E3%81%AE%E3%82%A8%E3%83%A9%E3%83%BC%E3%82%92-rescue-%E7%AF%80%E3%81%A7%E5%8F%97%E3%81%91%E5%8F%96%E3%82%8B"><i class="fa fa-link"></i></a>Erlang のエラーを <code>rescue</code> 節で受け取る</h3>
+
+<p><code>rescue</code> 節では、Erlang のエラーも適切に Elixir のエラーに変換されます。</p>
+
+<p>Erlang で error の例外を投げるには <a href="http://erlang.org/doc/man/erlang.html#error-1" rel="nofollow noopener" target="_blank"><code>:erlang.error/1</code></a> を使っていました。<br>
+ただ、この例外は Elixir の例外と違い、<code>:erlang.error/1</code> には任意の term を渡すことができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="ss">:badarg</span><span class="p">)</span>
+<span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">({</span><span class="ss">:badkey</span><span class="p">,</span> <span class="n">map</span><span class="p">,</span> <span class="n">key</span><span class="p">})</span>
+</pre></div></div>
+
+<p><code>rescue</code> 節では、<code>:erlang.error/1</code> によって投げられた Erlang のエラーも捕捉できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="no">UndefinedModule</span><span class="o">.</span><span class="n">undefined_function</span><span class="p">()</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="no">UndefinedFunctionError</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="no">Exception</span><span class="o">.</span><span class="n">message</span><span class="p">(</span><span class="n">error</span><span class="p">))</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>function UndefinedModule.undefined_function/0 is undefined (module UndefinedModule is not available)
+</pre></div></div>
+
+<p>通常、未定義の関数を呼び出すと、<code>:erlang.error(:undef)</code> という Erlang の例外が投げられます。<br>
+<code>rescue</code> 節の内部では、この Erlang の例外を捕捉して、既知の名前なら、対応する例外に置き換えています。<br>
+<code>:undef</code> は既知の名前として登録されているので、内部で <code>:undef</code> に対応する <a href="https://hexdocs.pm/elixir/UndefinedFunctionError.html" rel="nofollow noopener" target="_blank"><code>UndefinedFunctionError</code></a> に置き換えます。</p>
+
+<p>もし既知の名前でなかった場合は、<a href="https://hexdocs.pm/elixir/ErlangError.html" rel="nofollow noopener" target="_blank"><code>ErlangError</code></a> に置き換えます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="ss">:unknown_exception</span><span class="p">)</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="no">ErlangError</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="no">Exception</span><span class="o">.</span><span class="n">message</span><span class="p">(</span><span class="n">error</span><span class="p">))</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>Erlang error: :unknown_exception
+</pre></div></div>
+
+<p>つまり、<code>:erlang.error/1</code> で投げた Erlang の例外は全て Elixir の例外に置き換えられるため、<code>rescue</code> 節では Elixir の例外だけ気にすればいいということになります。</p>
+
+<p>また、<code>ErlangError</code> で例外を捕まえると、<strong>全ての Erlang の例外を捕捉する</strong> という機能もあります。<br>
+つまり先程の <code>:undef</code> も <code>ErlangError</code> で取得できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="no">UndefinedModule</span><span class="o">.</span><span class="n">undefined_function</span><span class="p">()</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="ow">in</span> <span class="no">ErlangError</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="no">Exception</span><span class="o">.</span><span class="n">message</span><span class="p">(</span><span class="n">error</span><span class="p">))</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>function UndefinedModule.undefined_function/0 is undefined (module UndefinedModule is not available)
+</pre></div></div>
+
+<p><code>error in ErlangError</code> で <code>ErlangError</code> だけ捕捉しているように見えますが、出力を見れば分かるように、変数 <code>error</code> は <code>UndefinedFunctionError</code> になっています。<br>
+これは <code>ErlangError</code> と書いた場合だけの特殊なケースで、普通はこんなことは出来ません。<br>
+どういう用途で使うのかは分かりませんが、<code>ErlangError</code> で捕捉する際には気を付けておきましょう。</p>
+
+<h3>
+<span id="catch-節" class="fragment"></span><a href="#catch-%E7%AF%80"><i class="fa fa-link"></i></a><code>catch</code> 節</h3>
+
+<p><code>catch</code> 節は、<code>rescue</code> 節とは違い、throw/error/exit の全ての種類の例外を捕捉できます。<br>
+error 以外の例外も取得したい場合に利用します。</p>
+
+<p>以下のように書きます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="o">...</span>
+<span class="k">catch</span>
+  <span class="n">value</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># :throw, value と同じ</span>
+  <span class="ss">:throw</span><span class="p">,</span> <span class="n">value</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># throw の例外だけ捕まえる</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="n">value</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># error の例外だけ捕まえる</span>
+  <span class="ss">:exit</span><span class="p">,</span> <span class="n">value</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># exit の例外だけ捕まえる</span>
+  <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="o">-&gt;</span> <span class="o">...</span> <span class="c1"># あらゆる例外を捕まえる</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>コメントに書いているように、<code>:throw</code>, <code>:error</code>, <code>:exit</code> でパターンマッチすることで、それぞれ throw/error/exit の例外を捕捉できます。<br>
+省略した場合には <code>:throw</code> を書いたのと同じ意味になります。</p>
+
+<p>また、<code>rescue</code> 節と違ってパターンマッチが使えるので、<code>_, value -&gt; ...</code> と書くことで全ての例外を捕捉できるし、<code>value</code> 側でもパターンマッチが可能です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="k">raise</span> <span class="no">RuntimeError</span><span class="p">,</span> <span class="ss">message:</span> <span class="s2">"foo"</span>
+<span class="k">catch</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="p">%</span><span class="no">RuntimeError</span><span class="p">{</span><span class="ss">message:</span> <span class="s2">"foo"</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"caught a RuntimeError and the message is </span><span class="se">\"</span><span class="s2">foo</span><span class="se">\"</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>caught a RuntimeError and the message is "foo"
+</pre></div></div>
+
+<p>ただし、<code>rescue</code> 節と違って Erlang のエラーを Elixir のエラーに変換する機能はありません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="ss">:badarg</span><span class="p">)</span>
+<span class="k">catch</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="p">%</span><span class="no">ArgumentError</span><span class="p">{}</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"ArgumentError"</span><span class="p">)</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="ss">:badarg</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">":badarg"</span><span class="p">)</span> <span class="c1"># こっちが呼ばれる</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>:badarg
+</pre></div></div>
+
+<p>Elixir のエラーに変換する場合、<a href="https://hexdocs.pm/elixir/Exception.html#normalize/3" rel="nofollow noopener" target="_blank"><code>Exception.normalize/3</code></a> が使えます。<br>
+実際、<code>rescue</code> 節も内部的には <code>Exception.normalize/3</code> を呼んでいるだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="ss">:badarg</span><span class="p">)</span>
+<span class="k">catch</span>
+  <span class="c1"># この時点では error は :badarg</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="n">error</span> <span class="o">-&gt;</span>
+    <span class="c1"># Elixir の例外に変換</span>
+    <span class="n">error</span> <span class="o">=</span> <span class="no">Exception</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="ss">:error</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+    <span class="c1"># error が ArgumentError になっている</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>%ArgumentError{message: "argument error"}
+</pre></div></div>
+
+<h3>
+<span id="catch-と-rescue-の優先順位" class="fragment"></span><a href="#catch-%E3%81%A8-rescue-%E3%81%AE%E5%84%AA%E5%85%88%E9%A0%86%E4%BD%8D"><i class="fa fa-link"></i></a><code>catch</code> と <code>rescue</code> の優先順位</h3>
+
+<p><code>catch</code> 節と <code>rescue</code> 節が両方とも記述されている場合、記述した順序に関係なく、常に <code>rescue</code> 節が優先されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="ss">:erlang</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"foo"</span><span class="p">)</span>
+<span class="k">catch</span>
+  <span class="n">_</span><span class="p">,</span> <span class="n">error</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"catch: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">error</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span><span class="p">(</span><span class="s2">"rescue: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">error</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>rescue: %ErlangError{original: "foo"}
+</pre></div></div>
+
+<p>このコードでは、<code>catch</code> 節の後に <code>rescue</code> 節を書いていますが、<code>rescue</code> 節で捕捉できるエラーだったため、そちらが優先されています。</p>
+
+<p>なお、Elixir 1.6 以降は、このような書き方をしたら警告が出るようになりました。<br>
+なので Elixir 1.6 以降は警告さえちゃんと守ってれば気にしなくて良さそうです。</p>
+
+<h3>
+<span id="else-節と-after-節について" class="fragment"></span><a href="#else-%E7%AF%80%E3%81%A8-after-%E7%AF%80%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>else</code> 節と <code>after</code> 節について</h3>
+
+<p>例外の捕捉とは関係ないですが、<code>try/1</code> では <code>else</code> 節と <code>after</code> 節も書けるので、軽く説明しておきます。</p>
+
+<p><code>else</code> 節は、<code>try</code> ブロックの中で例外が起きなかった場合に実行される節です。<br>
+<code>try</code> の最後の式の結果を引数として受け取り（パターンマッチ可能）、処理を続行します。</p>
+
+<p>この <code>else</code> 節の例外は、ここの <code>try/1</code> の <code>catch</code> や <code>rescue</code> では <strong>捕捉されません</strong> 。<br>
+捕捉したいなら直前の <code>try/1</code> の方に書くか、<code>else</code> 節の中で更に <code>try/1</code> をネストさせて書きましょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="o">...</span>
+<span class="k">else</span>
+  <span class="n">value</span> <span class="ow">when</span> <span class="n">value</span> <span class="o">&lt;</span> <span class="mi">100</span> <span class="o">-&gt;</span>
+    <span class="c1"># ここで発生した例外は捕捉されない</span>
+    <span class="n">do_something1</span><span class="p">()</span>
+  <span class="n">value</span> <span class="o">-&gt;</span>
+    <span class="c1"># 更に try/1 で囲めばそこで捕捉可能</span>
+    <span class="k">try</span> <span class="k">do</span>
+      <span class="n">do_something2</span><span class="p">()</span>
+    <span class="k">rescue</span>
+      <span class="n">error</span> <span class="o">-&gt;</span> <span class="o">...</span>
+    <span class="k">end</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="o">-&gt;</span> <span class="o">...</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>after</code> 節は、<code>try</code> の処理が成功しても失敗しても実行される節です。<br>
+あまり説明することは無いですが、注意としては、<code>after</code> 節は <strong>必ず実行されるとは限らない</strong> ことです。</p>
+
+<p>他のプロセスから突然 exit メッセージがやってきた場合、<code>after</code> 節を実行する間も無くプロセスが終了します。<br>
+幸いなことに、メモリやファイルディスクリプタといったリソースは、プロセスが終了すると自動的に解放されるので、そこはあまり気にする必要はありません。<br>
+ただ、<code>after</code> 節の実行がログやコンソールに残らない可能性があるので気を付けましょう。</p>
+
+<h2>
+<span id="raise12-について" class="fragment"></span><a href="#raise12-%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>raise/{1,2}</code> について</h2>
+
+<p><code>raise/{1,2}</code> は error の例外を投げる関数です。<br>
+基本的には、以下のように利用します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">raise</span> <span class="o">&lt;</span><span class="err">エラー型</span><span class="o">&gt;</span><span class="p">,</span> <span class="o">&lt;</span><span class="err">エラー型固有の引数</span><span class="o">&gt;</span>
+</pre></div></div>
+
+<p>例えば <a href="https://hexdocs.pm/elixir/KeyError.html" rel="nofollow noopener" target="_blank"><code>KeyError</code></a> の場合、以下のように書きます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">key</span> <span class="o">=</span> <span class="o">...</span>
+<span class="n">term</span> <span class="o">=</span> <span class="o">...</span>
+<span class="k">raise</span> <span class="no">KeyError</span><span class="p">,</span> <span class="ss">key:</span> <span class="n">key</span><span class="p">,</span> <span class="ss">term:</span> <span class="n">term</span>
+</pre></div></div>
+
+<p><code>KeyError</code> がエラーの型で、<code>key: key, term: term</code> が <code>KeyError</code> 型固有の引数となります。<br>
+これによって <code>raise/2</code> は処理の中で <code>KeyError.exception(key: key, term: term)</code> という処理を呼ぶので、<code>KeyError.exception/1</code> の中で例外用の構造体を生成して返すようになっています。<br>
+詳細は <code>Exception</code> ビヘイビアの説明でやります。</p>
+
+<h3>
+<span id="詳細な使い方" class="fragment"></span><a href="#%E8%A9%B3%E7%B4%B0%E3%81%AA%E4%BD%BF%E3%81%84%E6%96%B9"><i class="fa fa-link"></i></a>詳細な使い方</h3>
+
+<p><code>raise/{1,2}</code> では他にもいくつかの方法で error の例外を投げることができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">raise</span> <span class="s2">"aaa"</span>
+<span class="c1"># → raise RuntimeError, message: "aaa" と同じ意味</span>
+
+<span class="k">raise</span> <span class="no">FooError</span>
+<span class="c1"># → raise FooError, [] と同じ意味</span>
+
+<span class="k">raise</span> <span class="p">%</span><span class="no">RuntimeError</span><span class="p">{</span><span class="ss">message:</span> <span class="s2">"aaa"</span><span class="p">}</span>
+<span class="c1"># → RuntimeError.exception/1 を呼ばず、そのまま例外を投げる</span>
+</pre></div></div>
+
+<p>コメントに書いている通りです。</p>
+
+<p>特に３番目の方法を利用することで、<code>exception/1</code> を実装せずに例外を投げられます。<br>
+これも詳細は <code>Exception</code> ビヘイビアの説明でやります。</p>
+
+<h2>
+<span id="reraise23-について" class="fragment"></span><a href="#reraise23-%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>reraise/{2,3}</code> について</h2>
+
+<p><code>raise/{1,2}</code> を使うと、スタックトレースがそれを呼び出した場所からになります。<br>
+しかし、<a href="https://qiita.com/Kokudori/items/987073d59529b6c9a37c#%E4%BE%8B%E5%A4%96%E4%B8%AD%E7%AB%8B" id="reference-c19226d7184282e6855e">例外中立</a> の観点から、一度受け取った例外を、まるで元の場所で例外が投げられたかのように振る舞いたいことが（割と頻繁に）あります。</p>
+
+<p>そういう場合には <a href="https://hexdocs.pm/elixir/Kernel.html#reraise/2" rel="nofollow noopener" target="_blank"><code>reraise/{2,3}</code></a> を利用します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="n">do_something</span><span class="p">()</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="o">-&gt;</span>
+    <span class="no">Logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="k">fn</span> <span class="o">-&gt;</span> <span class="s2">"do_something/0 were occure an error: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">error</span><span class="si">}</span><span class="s2">"</span> <span class="k">end</span><span class="p">)</span>
+    <span class="c1"># 元のスタックトレースで再度例外を投げる</span>
+    <span class="n">reraise</span> <span class="n">error</span><span class="p">,</span> <span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">()</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>こうすることで、スタックトレースを見た時に例外の発生元が <code>do_something/0</code> になり、例外の中立性が保たれることになります。</p>
+
+<p>なお Elixir 1.7 以降では <code>System.stacktrace()</code> の代わりに <code>__STACKTRACE__</code> を使う必要があります。</p>
+
+<h2>
+<span id="defexception1-について" class="fragment"></span><a href="#defexception1-%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>defexception/1</code> について</h2>
+
+<p><a href="https://hexdocs.pm/elixir/Kernel.html#defexception/1" rel="nofollow noopener" target="_blank"><code>defexception/1</code></a> は、新しい例外を定義するための機能です。<br>
+<code>defexception/1</code> で例外を定義することで、その構造体を使って例外を投げれるようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">FooError</span> <span class="k">do</span>
+  <span class="k">defexception</span> <span class="p">[</span><span class="ss">:message</span><span class="p">]</span>
+<span class="k">end</span>
+
+<span class="k">try</span> <span class="k">do</span>
+  <span class="k">raise</span> <span class="no">FooError</span><span class="p">,</span> <span class="ss">message:</span> <span class="s2">"foo error"</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"Exception occured: </span><span class="si">#{</span><span class="no">Exception</span><span class="o">.</span><span class="n">message</span><span class="p">(</span><span class="n">error</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Exception</span> <span class="ss">occured:</span> <span class="n">foo</span> <span class="n">error</span>
+</pre></div></div>
+
+<h3>
+<span id="defexception1-の実装" class="fragment"></span><a href="#defexception1-%E3%81%AE%E5%AE%9F%E8%A3%85"><i class="fa fa-link"></i></a><code>defexception/1</code> の実装</h3>
+
+<p>もう少し具体的に言うと、<code>defexception/1</code> は、例外フラグの付いた構造体を定義し、<a href="https://hexdocs.pm/elixir/Exception.html#callbacks" rel="nofollow noopener" target="_blank">Exception ビヘイビア</a> をいい感じに実装します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">FooError</span> <span class="k">do</span>
+  <span class="k">defexception</span> <span class="p">[</span><span class="ss">:message</span><span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>このコードは、実際には以下のコードに展開されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">FooError</span> <span class="k">do</span>
+  <span class="nv">@behaviour</span> <span class="no">Exception</span>
+  <span class="k">defstruct</span> <span class="p">[{</span><span class="ss">:__exception__</span><span class="p">,</span> <span class="no">true</span><span class="p">},</span> <span class="ss">:message</span><span class="p">]</span>
+
+  <span class="c1"># ------ :message がある場合のみ定義 begin ------</span>
+  <span class="nv">@spec</span> <span class="n">message</span><span class="p">(</span><span class="no">Exception</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="no">String</span><span class="o">.</span><span class="n">t</span>
+  <span class="k">def</span> <span class="n">message</span><span class="p">(</span><span class="n">exception</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">exception</span><span class="o">.</span><span class="n">message</span>
+  <span class="k">end</span>
+
+  <span class="n">defoverridable</span> <span class="ss">message:</span> <span class="mi">1</span>
+
+  <span class="nv">@spec</span> <span class="n">exception</span><span class="p">(</span><span class="no">String</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="no">Exception</span><span class="o">.</span><span class="n">t</span>
+  <span class="k">def</span> <span class="n">exception</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_binary</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">exception</span><span class="p">(</span><span class="ss">message:</span> <span class="n">msg</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="c1"># ------ :message がある場合のみ定義 end ------</span>
+
+  <span class="nv">@spec</span> <span class="n">exception</span><span class="p">(</span><span class="n">keyword</span><span class="p">)</span> <span class="p">::</span> <span class="no">Exception</span><span class="o">.</span><span class="n">t</span>
+  <span class="k">def</span> <span class="n">exception</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="ow">when</span> <span class="n">is_list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Kernel</span><span class="o">.</span><span class="n">struct!</span><span class="p">(</span><span class="n">__struct__</span><span class="p">(),</span> <span class="n">args</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="n">defoverridable</span> <span class="ss">exception:</span> <span class="mi">1</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>defstruct</code> の部分で <code>{:__exception__, true}</code> というフィールドを追加しています。<br>
+この <code>:__exception__</code> が <code>true</code> かどうかが、例外用の構造体かどうかを分けるためのフラグになっています。<br>
+実際、例外用の構造体かどうかを判別する <a href="https://hexdocs.pm/elixir/Exception.html#exception?/1" rel="nofollow noopener" target="_blank"><code>Exception.exception?/1</code></a> 関数は以下のような実装になっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">exception?</span><span class="p">(%{</span><span class="ss">__struct__:</span> <span class="n">struct</span><span class="p">,</span> <span class="ss">__exception__:</span> <span class="no">true</span><span class="p">})</span> <span class="ow">when</span> <span class="n">is_atom</span><span class="p">(</span><span class="n">struct</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="no">true</span>
+<span class="k">def</span> <span class="n">exception?</span><span class="p">(</span><span class="n">_</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="no">false</span>
+</pre></div></div>
+
+<p><code>__exception__: true</code> のパターンマッチを使って例外を認識していることが分かります。</p>
+
+<p>また、<code>raise</code> は <a href="https://hexdocs.pm/elixir/Exception.html#callbacks" rel="nofollow noopener" target="_blank"><code>Exception</code> ビヘイビア</a> の関数を要求します。<br>
+そのため <code>defexception/1</code> では <code>Exception</code> ビヘイビアが要求する <code>message/1</code> と <code>exception/1</code> を実装しています。</p>
+
+<p>「:message がある場合のみ定義」というコメントで挟まれた部分は、<code>:message</code> フィールドが存在している場合だけ実装します。<br>
+見ての通り、<code>:message</code> フィールドを指定せずに例外を定義した場合には <code>message/1</code> が実装されないので、その場合は自分で <code>message/1</code> を実装する必要があります。</p>
+
+<h2>
+<span id="exception-ビヘイビアについて" class="fragment"></span><a href="#exception-%E3%83%93%E3%83%98%E3%82%A4%E3%83%93%E3%82%A2%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a><code>Exception</code> ビヘイビアについて</h2>
+
+<p><code>Exception</code> ビヘイビアは、<code>raise</code> で例外を投げたり、エラーメッセージを取得する際に利用するコールバック関数です。<br>
+<code>Exception</code> ビヘイビアは以下の関数を要求しています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="nv">@callback</span> <span class="n">exception</span><span class="p">(</span><span class="n">term</span><span class="p">)</span> <span class="p">::</span> <span class="no">Exception</span><span class="o">.</span><span class="n">t</span>
+<span class="nv">@callback</span> <span class="n">message</span><span class="p">(</span><span class="no">Exception</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="no">String</span><span class="o">.</span><span class="n">t</span>
+</pre></div></div>
+
+<p>具体的にこれらの関数がどのように使われているかというと、</p>
+
+<ul>
+<li>
+<code>raise mod, args</code> した時に <code>mod.exception(args)</code> を呼んで例外の構造体を作る</li>
+<li>
+<code>Exception.message(exception)</code> した時に <code>mod.message(exception)</code> を呼んでメッセージを取得する</li>
+</ul>
+
+<p>となります。<br>
+例えば <code>raise FooError, message: "foo error"</code> と書いた場合には <code>FooError.exception(message: "foo error")</code> が呼ばれ、その例外の構造体を受け取って <code>Exception.message(error)</code> と書いた場合には <code>FooError.message(error)</code> が呼ばれます。</p>
+
+<p>逆に言えば、それをしなければ <code>Exception</code> ビヘイビアを実装してなくても例外を扱えます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">FooError</span> <span class="k">do</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">__exception__:</span> <span class="no">true</span><span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="k">raise</span> <span class="p">%</span><span class="no">FooError</span><span class="p">{}</span>
+<span class="k">rescue</span>
+  <span class="n">error</span> <span class="o">-&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"Exception occured: </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">error</span><span class="si">}</span><span class="s2">"</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Exception</span> <span class="ss">occured:</span> <span class="p">%</span><span class="no">FooError</span><span class="p">{}</span>
+</pre></div></div>
+
+<p><code>defstruct/1</code> の際に <code>__exception__: true</code> を入れておく必要はありますが、<code>Exception</code> ビヘイビアが要求する関数は一切実装していません。<br>
+<code>raise/1</code> の仕様として、引数に例外の構造体を渡した場合、<code>mod.exception(args)</code> を呼ばず、引数に渡した例外を直接利用します。<br>
+今回は <code>raise %FooError{}</code> と例外の構造体を直接渡しているので、<code>FooError.exception([])</code> は呼ばれません。</p>
+
+<p>また、<code>rescue</code> の中でも <code>Exception.message(error)</code> を利用していないので、ここでも <code>FooError.message(error)</code> が呼ばれず、結局 <code>Exception</code> ビヘイビアが要求する関数を実装していなくても動作します。</p>
+
+<h3>
+<span id="exceptionmessage1-を利用する" class="fragment"></span><a href="#exceptionmessage1-%E3%82%92%E5%88%A9%E7%94%A8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a><code>Exception.message/1</code> を利用する</h3>
+
+<p>例外からメッセージを取り出すなら、ほとんどの場合は何も考えず <a href="https://hexdocs.pm/elixir/Exception.html#message/1" rel="nofollow noopener" target="_blank"><code>Exception.message/1</code></a> を呼び出した方がいいでしょう。<br>
+<code>error.message</code> で直接 <code>:message</code> フィールドを取り出したり、<code>FooError.message(error)</code> のように直接 <code>Exception</code> ビヘイビアの関数を読んだりしてはいけません。</p>
+
+<p>なぜなら、<code>error</code> がどのような例外か分からない場合、確実に <code>error.message</code> が存在するとは限らないし、その例外が確実に <code>message/1</code> を実装しているとは限らないからです。<br>
+<code>Exception.message/1</code> なら、そのような場合でもちゃんとメッセージを返してくれます。</p>
+
+<p>ただし、<code>Exception.message/1</code> に渡す引数は例外用の構造体である必要があります。<br>
+つまり <code>error.__exception__ == true</code> なフィールドが含まれている必要があります。</p>
+
+<p>これは <code>catch</code> で Erlang の <code>:badarg</code> や <code>:undef</code> といった、atom の例外を受け取った場合に問題になります。<br>
+そのような Erlang の例外を受け取る可能性がある場合には <a href="https://hexdocs.pm/elixir/Exception.html#normalize/3" rel="nofollow noopener" target="_blank"><code>Exception.normalize/3</code></a> を呼び出して、Erlang の例外を Elixir の例外に変換しましょう。</p>
+
+<p>つまり、<code>catch</code> 節であらゆるエラーからメッセージを取得するなら以下のようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="o">...</span>
+<span class="k">catch</span>
+  <span class="ss">:error</span><span class="p">,</span> <span class="n">error</span> <span class="o">-&gt;</span>
+    <span class="c1"># normalize してから</span>
+    <span class="n">exc</span> <span class="o">=</span> <span class="no">Exception</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="ss">:error</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+    <span class="c1"># メッセージを取得</span>
+    <span class="n">message</span> <span class="o">=</span> <span class="no">Exception</span><span class="o">.</span><span class="n">message</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>Elixir の例外は、最初に書いたように、意外と複雑です。</p>
+
+<p>ただ、実際に利用するのはこの中の一部分だけでしょう。<br>
+それでもこれだけ細かく説明したのは、これを知っておくことで、落とし穴を回避できる可能性が高いからです。</p>
+
+<p>例えば <code>raise/{1,2}</code> の仕様と、<code>defexception/1</code> で <code>:message</code> の有無によってどういうコードが生成されるかを知っていれば、<code>raise MyError, "message"</code> と書いた時のコンパイルエラーを早めに修正できるでしょう。<sup id="fnref1"><a href="#fn1" rel="footnote" title='raise MyError, "message" は MyError.exception("message") を呼び出すが、defexception/1 で :message を定義しなかった場合は文字列を引数に取る exception/1 が定義されないので、コンパイルエラーになる'>1</a></sup></p>
+
+<p>例外の仕様を把握して、Elixir の例外とうまく付き合っていきましょう。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://elixir-lang.org/getting-started/try-catch-and-rescue.html" rel="nofollow noopener" target="_blank">try, catch, and rescue - Elixir</a></li>
+<li><a href="https://hexdocs.pm/elixir/Exception.html" rel="nofollow noopener" target="_blank">Exception</a></li>
+<li><a href="https://hexdocs.pm/elixir/Kernel.SpecialForms.html#try/1" rel="nofollow noopener" target="_blank">try/1 - Kernel.SpecialForms</a></li>
+<li><a href="https://hexdocs.pm/elixir/Kernel.html#raise/1" rel="nofollow noopener" target="_blank">raise/1 - Kernel</a></li>
+<li><a href="https://hexdocs.pm/elixir/Kernel.html#reraise/1" rel="nofollow noopener" target="_blank">reraise/1 - Kernel</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>raise MyError, "message"</code> は <code>MyError.exception("message")</code> を呼び出すが、<code>defexception/1</code> で <code>:message</code> を定義しなかった場合は文字列を引数に取る <code>exception/1</code> が定義されないので、コンパイルエラーになる <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

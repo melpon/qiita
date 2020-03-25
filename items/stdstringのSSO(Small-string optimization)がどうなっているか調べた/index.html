@@ -1,0 +1,261 @@
+<p>GCC と Clang の SSO が気になったので調べました。</p>
+
+<h2>
+<span id="ssosmall-string-optimizationとは" class="fragment"></span><a href="#ssosmall-string-optimization%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>SSO(Small-string optimization)とは</h2>
+
+<p>通常、<code>std::string</code> は文字列を確保する際、動的にメモリを確保します。<br>
+しかし <code>"aaa"</code> とか <code>"hogehoge"</code> とかの小さい文字列でメモリをアロケートするのは勿体無い。<br>
+何とかメモリを確保せずに済ませようと頑張って最適化された実装が SSO です。</p>
+
+<p>具体的には、<code>std::string</code> オブジェクトの中に文字列を格納します。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre><span class="k">class</span> <span class="nc">string</span> <span class="p">{</span>
+  <span class="kt">char</span> <span class="n">sso</span><span class="p">[</span><span class="mi">16</span><span class="p">];</span>
+  <span class="p">...</span>
+<span class="p">};</span>
+</pre></div></div>
+
+<p>こうすることで、メモリをアロケートせずに文字列を格納できます。<br>
+ただし、これは全ての <code>std::string</code> オブジェクトのサイズが増えることになります。</p>
+
+<p>通常、<code>std::basic_string</code> には以下のデータが必要になります。</p>
+
+<ul>
+<li>文字列の実体へのポインタ</li>
+<li>利用している文字列のサイズ（size）</li>
+<li>確保している領域のキャパシティ（capacity）</li>
+<li>アロケータ</li>
+</ul>
+
+<p>それぞれが8バイトとして32バイト、これに加えて <code>char sso[16]</code> で 16 バイト確保するとすれば、48バイトです。<br>
+1文字をコピーするために48バイトもコピーするのはコストが高すぎるでしょう。</p>
+
+<p>そのため GCC の libstdc++ や Clang の libcxx は、ものすごく頑張って最適化をしています。</p>
+
+<p>実際、以下のコードを書いて調べてみると、GCC 6.3.0 なら <strong>32</strong>、Clang 4.0.0 なら <strong>24</strong> と表示されました。<sup id="fnref1"><a href="#fn1" rel="footnote" title="64bitマシン上の話です">1</a></sup></p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre><span class="cp">#include &lt;string&gt;
+#include &lt;iostream&gt;
+</span>
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">std</span><span class="o">::</span><span class="n">cout</span> <span class="o">&lt;&lt;</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div></div>
+
+<p>GCC も Clang も SSO を含んでいます。<br>
+それなのにこのサイズで済んでいるのはどんな実装になっているのか。<br>
+気になったのでソースを見て調べてみました。</p>
+
+<h2>
+<span id="gccの場合" class="fragment"></span><a href="#gcc%E3%81%AE%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a>GCCの場合</h2>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>      <span class="c1">// Use empty-base optimization: http://www.cantrip.org/emptyopt.html</span>
+      <span class="k">struct</span> <span class="n">_Alloc_hider</span> <span class="o">:</span> <span class="n">allocator_type</span> <span class="c1">// TODO check __is_final</span>
+      <span class="p">{</span>    
+        <span class="n">_Alloc_hider</span><span class="p">(</span><span class="n">pointer</span> <span class="n">__dat</span><span class="p">,</span> <span class="k">const</span> <span class="n">_Alloc</span><span class="o">&amp;</span> <span class="n">__a</span> <span class="o">=</span> <span class="n">_Alloc</span><span class="p">())</span>
+        <span class="o">:</span> <span class="n">allocator_type</span><span class="p">(</span><span class="n">__a</span><span class="p">),</span> <span class="n">_M_p</span><span class="p">(</span><span class="n">__dat</span><span class="p">)</span> <span class="p">{</span> <span class="p">}</span>
+
+        <span class="n">pointer</span> <span class="n">_M_p</span><span class="p">;</span> <span class="c1">// The actual data.</span>
+      <span class="p">};</span>   
+
+      <span class="n">_Alloc_hider</span>      <span class="n">_M_dataplus</span><span class="p">;</span>
+      <span class="n">size_type</span>         <span class="n">_M_string_length</span><span class="p">;</span>
+
+      <span class="k">enum</span> <span class="p">{</span> <span class="n">_S_local_capacity</span> <span class="o">=</span> <span class="mi">15</span> <span class="o">/</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">_CharT</span><span class="p">)</span> <span class="p">};</span>
+
+      <span class="k">union</span>
+      <span class="p">{</span>    
+        <span class="n">_CharT</span>           <span class="n">_M_local_buf</span><span class="p">[</span><span class="n">_S_local_capacity</span> <span class="o">+</span> <span class="mi">1</span><span class="p">];</span>
+        <span class="n">size_type</span>        <span class="n">_M_allocated_capacity</span><span class="p">;</span>
+      <span class="p">};</span>
+</pre></div></div>
+
+<p>ものすごく分かりやすい実装です。</p>
+
+<p><code>_Alloc_hide</code> 型が <code>_M_p</code> を持っていて、これが文字列の実体を指すポインタになります。<br>
+アロケータを継承しているのは、コメントに書いている通り <a href="http://en.cppreference.com/w/cpp/language/ebo" rel="nofollow noopener" target="_blank">EBO</a> (Empty base optimization) を有効にするためです。<br>
+アロケータが状態を持たない場合、EBO によって <code>_Alloc_hide</code> のサイズはポインタの8バイトだけになります。</p>
+
+<p><code>_M_string_length</code> は文字列のサイズで、8バイト取っています。</p>
+
+<p><code>_S_local_capacity</code> は、<code>15 / sizeof(_CharT)</code> です。<br>
+<code>_CharT == char</code> であり、<code>sizeof(char) == 1</code> なので、<code>_S_local_capacity == 15</code> になります。<br>
+そしてこの <code>_S_local_capacity</code> を使って <code>_M_local_buf[_S_local_capacity + 1]</code> と <code>_M_allocated_capacity</code> で union していますが、<code>_M_local_buf</code> は16バイト、<code>_M_allocated_capacity</code> は8バイトであるため、このunionは16バイト取ります。</p>
+
+<p>これで合計32バイトになります。</p>
+
+<p>SSO 用のバッファは、名前から何となく想像がつくと思いますが、<code>_M_local_buf</code> です。<br>
+15文字を超えないサイズの文字列であれば、この <code>_M_local_buf</code> に格納されることになります。<br>
+つまり <strong>GCC の SSO は 15 バイトまで有効</strong> ということです。</p>
+
+<p>GCC 版 <code>std::string</code> の良いところは、<strong>分岐が少ない</strong> ところです。<br>
+それぞれの関数の実装を調べると、以下のようになっていました。</p>
+
+<ul>
+<li>
+<code>c_str()</code>: <code>_M_dataplus._M_p</code> を返すだけ（_M_p にはデフォルトで <code>_M_local_buf</code> が設定されているので）。</li>
+<li>
+<code>size()</code>: <code>_M_string_length</code> を返すだけ。</li>
+<li>
+<code>capacity()</code>: SSOが効いてるなら <code>_S_local_capacity</code> を返す、効いてないなら <code>_M_allocated_capacity</code> を返す。</li>
+</ul>
+
+<p>なお、SSOが効いているかの判断は <code>_M_dataplus._M_p == _M_local_buf</code> で行っています。</p>
+
+<p>このように <code>c_str()</code> と <code>size()</code> は分岐が必要ありません。<br>
+実体へのポインタやサイズは内部でもよく参照するため、ここで分岐が必要ないというのは、そこそこ高速化に寄与するでしょう（たぶん）。</p>
+
+<p>ただし、Clang の実装よりオブジェクトのサイズが大きくなっているため、そこはちょっと残念なところです。</p>
+
+<p>多分、古い <code>std::string</code> との ABI の互換性を崩したくなかったんじゃないかなと思いますが、ちゃんと調べていないので分かりません。</p>
+
+<h2>
+<span id="clangの場合" class="fragment"></span><a href="#clang%E3%81%AE%E5%A0%B4%E5%90%88"><i class="fa fa-link"></i></a>Clangの場合</h2>
+
+<p>Clang は、<code>_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT</code> が定義されているかどうかでレイアウトが変わります。<br>
+ここでは、<code>_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT</code> が定義されていないバージョンを書きます。デフォルトでは定義されていないバージョンが使われるはずです。<br>
+また、定数を計算している箇所を定数にしたり、今回の説明で関係無さそうな部分は削除しています。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="k">struct</span> <span class="n">__long</span>
+    <span class="p">{</span>
+        <span class="n">size_type</span> <span class="n">__cap_</span><span class="p">;</span>
+        <span class="n">size_type</span> <span class="n">__size_</span><span class="p">;</span>
+        <span class="n">pointer</span>   <span class="n">__data_</span><span class="p">;</span>
+    <span class="p">};</span>   
+
+    <span class="k">enum</span> <span class="p">{</span><span class="n">__short_mask</span> <span class="o">=</span> <span class="mh">0x01</span><span class="p">};</span>
+    <span class="k">enum</span> <span class="p">{</span><span class="n">__long_mask</span>  <span class="o">=</span> <span class="mh">0x1ul</span><span class="p">};</span>
+
+    <span class="k">enum</span> <span class="p">{</span><span class="n">__min_cap</span> <span class="o">=</span> <span class="mi">23</span><span class="p">};</span>
+
+    <span class="k">struct</span> <span class="n">__short</span>
+    <span class="p">{</span>    
+        <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">__size_</span><span class="p">;</span>
+        <span class="n">value_type</span> <span class="n">__data_</span><span class="p">[</span><span class="n">__min_cap</span><span class="p">];</span>
+    <span class="p">};</span>
+
+    <span class="k">struct</span> <span class="n">__rep</span>
+    <span class="p">{</span>
+        <span class="k">union</span>
+        <span class="p">{</span>
+            <span class="n">__long</span>  <span class="n">__l</span><span class="p">;</span>
+            <span class="n">__short</span> <span class="n">__s</span><span class="p">;</span>
+        <span class="p">};</span>
+    <span class="p">};</span>
+
+    <span class="n">__compressed_pair</span><span class="o">&lt;</span><span class="n">__rep</span><span class="p">,</span> <span class="n">allocator_type</span><span class="o">&gt;</span> <span class="n">__r_</span><span class="p">;</span>
+</pre></div></div>
+
+<p>まず、<code>__compressed_pair&lt;__rep, allocator_type&gt;</code> によって EBO を効かせて <code>allocator_type</code> のサイズを消しています。</p>
+
+<p>次に、SSO が効いてる場合と効いてない場合で、利用する構造体を <code>__long</code> と <code>__short</code> に分けています。</p>
+
+<p>SSO が効いていない場合、単純に <code>__long</code> 型の <code>__cap_</code> でキャパシティを、<code>__size_</code> でサイズを、<code>__data_</code> でポインタを格納しているだけです。</p>
+
+<p>SSO が効いている場合、サイズを格納するため <code>__size_</code> に1バイト、実体を格納するため <code>__data_</code> に23バイトを使っています。<br>
+最後は NULL である必要があるので、22文字まで格納できます。<br>
+つまり <strong>Clang の SSO は 22 バイトまで有効</strong> ということです。</p>
+
+<p>GCC のオブジェクトサイズが 32 バイトで SSO が 15 バイトなのに対し、Clang のオブジェクトサイズが 24 バイトで SSO が 22 バイト。<br>
+完全に Clang が勝ってる感じです。</p>
+
+<p>本当にこれでうまく動作するのか見ていきましょう。</p>
+
+<h3>
+<span id="ssoが効いているかを見る" class="fragment"></span><a href="#sso%E3%81%8C%E5%8A%B9%E3%81%84%E3%81%A6%E3%81%84%E3%82%8B%E3%81%8B%E3%82%92%E8%A6%8B%E3%82%8B"><i class="fa fa-link"></i></a>SSOが効いているかを見る</h3>
+
+<p>まず、SSO が効いているか効いていないかは、<code>__r_.first().__s.__size_</code> の下位1bitを見て判断しています。</p>
+
+<p>いきなりサイズのデータを壊しているように見えますが、実は <code>__r_.first().__s.__size_</code> には、文字列サイズの<strong>2倍の値</strong>を入れるようにしています。<br>
+そのため、下位1bitは空いているのです。<br>
+実際、SSO が効いている場合の文字列サイズの設定・取得関数は以下のようになっています。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="kt">void</span> <span class="nf">__set_short_size</span><span class="p">(</span><span class="n">size_type</span> <span class="n">__s</span><span class="p">)</span>
+        <span class="p">{</span><span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__s</span><span class="p">.</span><span class="n">__size_</span> <span class="o">=</span> <span class="p">(</span><span class="kt">unsigned</span> <span class="kt">char</span><span class="p">)(</span><span class="n">__s</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="p">);}</span>
+    <span class="n">size_type</span> <span class="n">__get_short_size</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__s</span><span class="p">.</span><span class="n">__size_</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="p">;}</span>
+</pre></div></div>
+
+<p>SSO が効いている場合はたかだか 22 までしか値が増えないため、2倍しても1バイトの最大値（255）を超えることはありません。<br>
+そのためこれで SSO が効いているかどうかを判断できます。</p>
+
+<p>ただし、<code>__short::__size_</code> の下位1bitは、同時に <code>__r_.first().__l.__cap_</code> の下位1bitでもあります。<br>
+SSO が効いていない場合、こちらの値として使われることになります。<br>
+<code>__cap_</code> は領域のキャパシティとして使われていますが、この変数のキャパシティとして利用する値を <strong>常に2の倍数にする</strong> ことにより、下位1bitを SSO が効いているかどうかのフラグとして使えるようにしています。</p>
+
+<h3>
+<span id="文字列へのポインタ" class="fragment"></span><a href="#%E6%96%87%E5%AD%97%E5%88%97%E3%81%B8%E3%81%AE%E3%83%9D%E3%82%A4%E3%83%B3%E3%82%BF"><i class="fa fa-link"></i></a>文字列へのポインタ</h3>
+
+<p>SSO が効いている場合は <code>__r_.first().__s.__data_</code> を、効いていない場合は <code>__r_.first().__l.__data_</code> を使います。</p>
+
+<h3>
+<span id="文字列のサイズ" class="fragment"></span><a href="#%E6%96%87%E5%AD%97%E5%88%97%E3%81%AE%E3%82%B5%E3%82%A4%E3%82%BA"><i class="fa fa-link"></i></a>文字列のサイズ</h3>
+
+<p>先程も説明しましたが、SSO が効いている場合は2倍した値が <code>__r_.first().__s.__size_</code> に格納されているため、2で割って値を返します。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="n">size_type</span> <span class="n">__get_short_size</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__s</span><span class="p">.</span><span class="n">__size_</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="p">;}</span>
+</pre></div></div>
+
+<p>SSO が効いていない場合は、単純に <code>__long::__size_</code> を返すだけです。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="n">size_type</span> <span class="n">__get_long_size</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__l</span><span class="p">.</span><span class="n">__size_</span><span class="p">;}</span>
+</pre></div></div>
+
+<h3>
+<span id="キャパシティ" class="fragment"></span><a href="#%E3%82%AD%E3%83%A3%E3%83%91%E3%82%B7%E3%83%86%E3%82%A3"><i class="fa fa-link"></i></a>キャパシティ</h3>
+
+<p>SSO が効いている場合は、単純に <code>__min_cap - 1</code> を返すだけです。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="n">size_type</span> <span class="n">capacity</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="p">(</span><span class="n">__is_long</span><span class="p">()</span> <span class="o">?</span> <span class="n">__get_long_cap</span><span class="p">()</span>
+                             <span class="o">:</span> <span class="k">static_cast</span><span class="o">&lt;</span><span class="n">size_type</span><span class="o">&gt;</span><span class="p">(</span><span class="n">__min_cap</span><span class="p">))</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;}</span>
+</pre></div></div>
+
+<p>SSO が効いていない場合は、先程も説明した通り、下位1bitを0にしてから返します。<br>
+これによって <code>__get_long_cap()</code> が必ず2の倍数になります。</p>
+
+<div class="code-frame" data-lang="cpp"><div class="highlight"><pre>    <span class="kt">void</span> <span class="nf">__set_long_cap</span><span class="p">(</span><span class="n">size_type</span> <span class="n">__s</span><span class="p">)</span>
+        <span class="p">{</span><span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__l</span><span class="p">.</span><span class="n">__cap_</span>  <span class="o">=</span> <span class="n">__long_mask</span> <span class="o">|</span> <span class="n">__s</span><span class="p">;}</span>
+    <span class="n">size_type</span> <span class="nf">__get_long_cap</span><span class="p">()</span> <span class="k">const</span>
+        <span class="p">{</span><span class="k">return</span> <span class="n">__r_</span><span class="p">.</span><span class="n">first</span><span class="p">().</span><span class="n">__l</span><span class="p">.</span><span class="n">__cap_</span> <span class="o">&amp;</span> <span class="n">size_type</span><span class="p">(</span><span class="o">~</span><span class="n">__long_mask</span><span class="p">);</span><span class="err">}</span>
+</pre></div></div>
+
+<p><code>capacity()</code> 関数は <code>__get_long_cap() - 1</code> を返すので、SSO が効いていない場合は必ず奇数になります。<br>
+-1 している理由は、文字列は必ず終端に '\0' が必要であるため、最低でも <code>capacity() + 1</code> バイトの領域を確保しておく必要があるからです。</p>
+
+<p>このように、どの関数も分岐を必要としていて、GCC より少しだけ遅くなる可能性があります。<br>
+しかしオブジェクトサイズが GCC より小さいこと、SSO のサイズが GCC より大きいことを考えると、総合的には Clang の方が良さそうに見えます。</p>
+
+<p>なお、<code>_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT</code> が定義されていると、<code>__long::__data_</code> や <code>__short::__data_</code> が構造体の先頭に来るようになります。<br>
+こうすることで、<code>std::string</code> オブジェクトの先頭アドレスと文字列の実体の先頭アドレスが同じ位置になるため、文字列へアクセスする速度を上げることができるようです。<br>
+ただ、ABIが変わってしまうため、ベンダー以外の人がフラグを変えるのは推奨していないとのことです。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>GCC, Clang の SSO がどのように実現されているかを見てきました。</p>
+
+<p>GCC は大分率直な実装になっていて、オブジェクトサイズが 32 バイトで、SSO が効く最大サイズが 15 バイトでした。<br>
+Clang は少し複雑な実装になっていて、オブジェクトサイズが 24 バイトで、SSO が効く最大サイズが 22 バイトでした。</p>
+
+<p>これを知っておくことで、もっと効率の良い C++ のコードを書けるかもしれません。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://stackoverflow.com/questions/21694302/what-are-the-mechanics-of-short-string-optimization-in-libc" rel="nofollow noopener" target="_blank">What are the mechanics of short string optimization in libc++?</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>64bitマシン上の話です <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

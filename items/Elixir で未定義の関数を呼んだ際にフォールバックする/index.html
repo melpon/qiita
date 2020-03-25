@@ -1,0 +1,46 @@
+<p>Elixir では、モジュール内で <code>:"$handle_undefined_function"</code> 関数を定義すると、未定義の関数を呼び出した際にその関数にフォールバックしてくれるようになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"定義済み: f()"</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="kn">unquote</span><span class="p">(</span><span class="ss">:"$handle_undefined_function"</span><span class="p">)(</span><span class="n">function</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"未定義: </span><span class="si">#{</span><span class="n">function</span><span class="si">}</span><span class="s2">, </span><span class="si">#{</span><span class="n">inspect</span> <span class="n">args</span><span class="si">}</span><span class="s2">"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">Foo</span><span class="o">.</span><span class="n">f</span><span class="p">()</span>
+<span class="no">Foo</span><span class="o">.</span><span class="n">bar</span><span class="p">()</span>
+<span class="no">Foo</span><span class="o">.</span><span class="n">mokemoke</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">"hoge"</span><span class="p">)</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>定義済み: f()
+未定義: bar, []
+未定義: mokemoke, [1, "hoge"]
+</pre></div></div>
+
+<h2>
+<span id="仕組み" class="fragment"></span><a href="#%E4%BB%95%E7%B5%84%E3%81%BF"><i class="fa fa-link"></i></a>仕組み</h2>
+
+<p>実はこれは Elixir の機能ではなく、Erlang の仕組みです。</p>
+
+<p><a href="http://erlang.org/doc/man/erlang.html#apply-3" rel="nofollow noopener" target="_blank"><code>apply/3</code> のドキュメント</a> を読んでみると、呼び出そうとした関数が無かった場合に、<code>:error_handler.undefined_function/3</code> を呼ぶと書いてあります。<br>
+そして <a href="http://erlang.org/doc/man/error_handler.html#undefined_function-3" rel="nofollow noopener" target="_blank"><code>:error_handler.undefined_function/3</code> のドキュメント</a> を読んでみると、<code>:"$handle_undefined_function"/2</code> が定義されている場合にはこの関数を呼ぶという仕様になっています。<br>
+<code>Foo.bar()</code> という呼び出しが <code>apply(Foo, :bar, [])</code> と等価であるという仕様がどこに書いてあるか分かりませんが、結果から考えるに、恐らく等価なのでしょう。</p>
+
+<p>ということで、<code>Foo.bar()</code> と書いた時に <code>bar/0</code> 関数が未定義なら <code>:"$handle_undefined_function"(:bar, [])</code> が呼ばれることになります。</p>
+
+<h2>
+<span id="通常のアプリケーションで使ってはいけない" class="fragment"></span><a href="#%E9%80%9A%E5%B8%B8%E3%81%AE%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%A7%E4%BD%BF%E3%81%A3%E3%81%A6%E3%81%AF%E3%81%84%E3%81%91%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>通常のアプリケーションで使ってはいけない</h2>
+
+<p><a href="http://erlang.org/doc/man/error_handler.html#undefined_function-3" rel="nofollow noopener" target="_blank"><code>:error_handler.undefined_function/3</code> のドキュメント</a> には利用上の警告が書かれています。<br>
+それによると、デバッグが難しくなる、Dialyzer や Xref 等の静的解析が効かなくなる等の理由により、通常のアプリケーションコードにこれを使うことは推奨していません。<br>
+テスト時やデバッグ時に使う外部用のスタブやモックとして利用するとか、そういう用途には使えるでしょう。</p>
+
+<p>実際、Ecto の Repo をテスト用に適当に定義してくれる <a href="https://hex.pm/packages/ecto_it" rel="nofollow noopener" target="_blank">ecto_it</a> ライブラリで <code>:"$handle_undefined_function"</code> 関数が<a href="https://github.com/xerions/ecto_it/blob/41b9885b3768efa184967ae8384443b9a4d74e01/lib/ecto_it/repo.ex#L12-L14" rel="nofollow noopener" target="_blank">定義されています</a>。<br>
+これは良い使い方だと言えます。</p>
+
+<p>覚えておくと何かに使えるかもしれません。</p>

@@ -1,0 +1,80 @@
+<p>Elixir には文字列補間(string interpolation)の機能があります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">x</span> <span class="o">=</span> <span class="mi">10</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="s2">"foo_</span><span class="si">#{</span><span class="n">x</span><span class="si">}</span><span class="s2">"</span>
+<span class="s2">"foo_10"</span>
+</pre></div></div>
+
+<p>文字列 <code>""</code> の中で <code>#{}</code> を使うことで、その中にある式を評価し、文字列として結合してくれます。</p>
+
+<p>ところで、atom を記述するには <code>:foo</code> のように書く訳ですが、<code>:"it is an atom!"</code> のように <code>:""</code> を使うことで記号や空白を含む場合でも atom を書くことができます。</p>
+
+<p>同じように <code>""</code> で囲んでるんだから、文字列補間でatomを作れるのではと思ってやってみると、できました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">x</span> <span class="o">=</span> <span class="mi">10</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="ss">:"foo_</span><span class="si">#{</span><span class="n">x</span><span class="si">}</span><span class="ss">"</span>
+<span class="ss">:foo_10</span>
+</pre></div></div>
+
+<p>なんか危険な臭いが漂ってきたので、どうやって実現しているのか気になり、どんな式に展開されているか確認してみました。<br>
+こういう時には <code>quote</code> がとても便利です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="kn">quote</span> <span class="k">do</span>
+<span class="o">...&gt;</span>   <span class="ss">:"foo_</span><span class="si">#{</span><span class="n">x</span><span class="si">}</span><span class="ss">"</span>
+<span class="o">...&gt;</span> <span class="k">end</span>
+<span class="p">{{:</span><span class="o">.</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[</span><span class="ss">:erlang</span><span class="p">,</span> <span class="ss">:binary_to_atom</span><span class="p">]},</span> <span class="p">[],</span>
+ <span class="p">[{</span><span class="ss">:&lt;</span><span class="o">&lt;&gt;&gt;</span><span class="p">,</span> <span class="p">[],</span>
+   <span class="p">[</span><span class="s2">"foo_"</span><span class="p">,</span>
+    <span class="p">{:::,</span> <span class="p">[],</span>
+     <span class="p">[{{:</span><span class="o">.</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[</span><span class="no">Kernel</span><span class="p">,</span> <span class="ss">:to_string</span><span class="p">]},</span> <span class="p">[],</span> <span class="p">[{</span><span class="ss">:x</span><span class="p">,</span> <span class="p">[],</span> <span class="no">Elixir</span><span class="p">}]},</span>
+      <span class="p">{</span><span class="ss">:binary</span><span class="p">,</span> <span class="p">[],</span> <span class="no">Elixir</span><span class="p">}]}]},</span> <span class="ss">:utf8</span><span class="p">]}</span>
+</pre></div></div>
+
+<p>ここで出てきた式をゴリゴリ読みやすくしていくと、最終的にこんな式になっていることが分かります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="ss">:erlang</span><span class="o">.</span><span class="n">binary_to_atom</span><span class="p">(</span><span class="o">&lt;&lt;</span><span class="s2">"foo_"</span><span class="p">,</span> <span class="n">to_string</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="p">::</span> <span class="n">binary</span><span class="o">&gt;&gt;</span><span class="p">,</span> <span class="ss">:utf8</span><span class="p">)</span>
+</pre></div></div>
+
+<p>見ての通り、文字列補間した結果を <a href="http://erlang.org/doc/man/erlang.html#binary_to_atom-2" rel="nofollow noopener" target="_blank"><code>:erlang.binary_to_atom/2</code></a> <sup id="fnref1"><a href="#fn1" rel="footnote" title="Elixir で言う String.to_atom/1 関数のこと">1</a></sup>しています。これは非常に危険です。<br>
+<a href="https://qiita.com/KOU_CHANG/items/c5eef2c5e6dc35b3fd65" id="reference-1a1788738497dfae0616">binary_to_atom/2 は使わない！！ #Erlang</a> にあるように、atom は一度生成されると二度と解放されないし、atom テーブルのサイズはデフォルトだとそこまで大きくないため、動的に生成してると割とすぐに死にます。<sup id="fnref2"><a href="#fn2" rel="footnote" title="すぐ死んでくれるならまだマシで、本番で稼働して一週間経ってから死ぬとかだと大分つらいと思う">2</a></sup></p>
+
+<p>なので、atom文字列補間<sup id="fnref3"><a href="#fn3" rel="footnote" title="「atom文字列補間」は正式に使われてる用語ではなく、自分が適当に付けました。むしろ正式には何て呼べばいいの。">3</a></sup>は <code>:erlang.binary_to_atom/2</code> と同程度に慎重に扱った方がいいでしょう。<br>
+大体の場合は <a href="https://hexdocs.pm/elixir/String.html#to_existing_atom/1" rel="nofollow noopener" target="_blank"><code>String.to_exsisting_atom/1</code></a> で問題ないし、これが使えなくてatomが無限に増える可能性があるなら、設計から見直すべきです。</p>
+
+<p>atom文字列補間を利用する正当な理由としては、例えば大量の同じような関数を定義する時です。<sup id="fnref4"><a href="#fn4" rel="footnote" title="ただしマクロを使う正当な理由にはならないので、ほんとにこのマクロが必要かは別途考える必要があります。">4</a></sup></p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">for</span> <span class="p">{</span><span class="n">name</span><span class="p">,</span> <span class="n">value</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="nv">@name_values</span> <span class="k">do</span>
+  <span class="n">for</span> <span class="p">{</span><span class="n">name2</span><span class="p">,</span> <span class="n">value2</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="nv">@name_values2</span> <span class="k">do</span>
+    <span class="k">def</span> <span class="kn">unquote</span><span class="p">(</span><span class="ss">:"get_</span><span class="si">#{</span><span class="n">name</span><span class="si">}</span><span class="ss">_</span><span class="si">#{</span><span class="n">name2</span><span class="si">}</span><span class="ss">"</span><span class="p">)()</span> <span class="k">do</span>
+      <span class="kn">unquote</span><span class="p">(</span><span class="n">value</span> <span class="o">&lt;&gt;</span> <span class="n">value2</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これなら実行時には atom を生成しないので問題ないでしょう。</p>
+
+<p>atom文字列補間を使う場合には気を付けて利用しましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>Elixir で言う <a href="https://hexdocs.pm/elixir/String.html#to_atom/1" rel="nofollow noopener" target="_blank"><code>String.to_atom/1</code></a> 関数のこと <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>すぐ死んでくれるならまだマシで、本番で稼働して一週間経ってから死ぬとかだと大分つらいと思う <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p>「atom文字列補間」は正式に使われてる用語ではなく、自分が適当に付けました。むしろ正式には何て呼べばいいの。 <a href="#fnref3">↩</a></p>
+</li>
+
+<li id="fn4">
+<p>ただしマクロを使う正当な理由にはならないので、ほんとにこのマクロが必要かは別途考える必要があります。 <a href="#fnref4">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,46 @@
+<p>「使ってみた」じゃなくて「使ってみなかった」という話です。</p>
+
+<h2>
+<span id="exredis-とは" class="fragment"></span><a href="#exredis-%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>exredis とは</h2>
+
+<p>exredis は Elixir 製の Redis のクライアントライブラリです。</p>
+
+<p><a href="https://hex.pm/" rel="nofollow noopener" target="_blank">hex.pm</a> で、Elixir 製のよく使われている Redis のクライアントライブラリを探してみると、<a href="https://hex.pm/packages/redix" rel="nofollow noopener" target="_blank">Redix</a> と <a href="https://hex.pm/packages/exredis" rel="nofollow noopener" target="_blank">exredis</a> が見つかります。</p>
+
+<p>exredis は信頼のおける Erlang 製の <a href="https://hex.pm/packages/eredis" rel="nofollow noopener" target="_blank">eredis</a> を使っていて、安定して動きそうなイメージがあります。</p>
+
+<h2>
+<span id="exredis-の酷い部分" class="fragment"></span><a href="#exredis-%E3%81%AE%E9%85%B7%E3%81%84%E9%83%A8%E5%88%86"><i class="fa fa-link"></i></a>exredis の酷い部分</h2>
+
+<p>しかしソースコードを見てみると酷くて、何が酷いかというと、<a href="https://github.com/artemeff/exredis/blob/master/lib/exredis.ex#L134-L135" rel="nofollow noopener" target="_blank">Redis にクエリを投げている部分</a>です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>  <span class="k">def</span> <span class="n">query</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">command</span><span class="p">)</span> <span class="ow">when</span> <span class="p">(</span><span class="n">is_pid</span><span class="p">(</span><span class="n">client</span><span class="p">)</span> <span class="ow">or</span> <span class="n">is_atom</span><span class="p">(</span><span class="n">client</span><span class="p">))</span> <span class="ow">and</span> <span class="n">is_list</span><span class="p">(</span><span class="n">command</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span>
+    <span class="n">client</span> <span class="o">|&gt;</span> <span class="ss">:eredis</span><span class="o">.</span><span class="n">q</span><span class="p">(</span><span class="n">command</span><span class="p">)</span> <span class="o">|&gt;</span> <span class="n">elem</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>:eredis.q/2</code> の戻り値は <code>{:ok, value}</code> か <code>{:error, reason}</code> な訳ですが、<strong>両方を纏めて <code>elem(1)</code> しています</strong>。<br>
+つまり戻り値は <code>value</code> か <code>reason</code> になるので、<strong>戻り値を見ても成功なのかエラーなのか区別が付かない</strong> という最高に酷い動作になっています。</p>
+
+<p>exredis は Redis を操作するために最終的にこの関数を呼んでいるので、ほとんどの関数は成功なのかエラーなのか区別が付かないということになります。</p>
+
+<p>なおこれは2015年に <a href="https://github.com/artemeff/exredis/issues/55" rel="nofollow noopener" target="_blank">issue に登録</a> され、2017年12月現在、まだ直っていません。<br>
+マイルストーンが 1.0.0 になってますが、1.0.0 がいつリリースされるのかは分かりません。</p>
+
+<h2>
+<span id="exredis-を使わない" class="fragment"></span><a href="#exredis-%E3%82%92%E4%BD%BF%E3%82%8F%E3%81%AA%E3%81%84"><i class="fa fa-link"></i></a>exredis を使わない</h2>
+
+<p>exredis は処理の根本がまともに書かれていないので、プロダクションでは使わない方がいいでしょう。<br>
+むしろ、これが Elixir の Redis クライアントライブラリとしてよく使われているのが驚きです。<sup id="fnref1"><a href="#fn1" rel="footnote" title="今見てみると redix が 407,631 ダウンロード、exredis が 166,778 ダウンロードでした">1</a></sup></p>
+
+<p>よく使われているライブラリでも酷いコードがあったりするので、利用するライブラリには目を通しておきましょう、という話でした。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>今見てみると redix が 407,631 ダウンロード、exredis が 166,778 ダウンロードでした <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

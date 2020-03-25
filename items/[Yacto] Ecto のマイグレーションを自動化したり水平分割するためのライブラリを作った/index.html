@@ -1,0 +1,409 @@
+<p><a href="https://hexdocs.pm/ecto/Ecto.html" rel="nofollow noopener" target="_blank">Ecto</a> はデータベースを扱うとても便利なライブラリです。</p>
+
+<p>ただ、自分達が使う上でいくつか使い勝手の悪い部分があったので、<a href="https://hex.pm/packages/yacto" rel="nofollow noopener" target="_blank">Yacto</a> というライブラリを作りました。<sup id="fnref1"><a href="#fn1" rel="footnote" title="お手伝い先の会社（株式会社gumi）の仕事として作ったので、gumi オーガナイゼーション下にあります。">1</a></sup></p>
+
+<h1>
+<span id="yacto-とは" class="fragment"></span><a href="#yacto-%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>Yacto とは</h1>
+
+<p>Yacto は、Ecto で使いにくかった部分をサポートするためのライブラリです。<br>
+大まかに以下の機能があります。</p>
+
+<ul>
+<li>マイグレーションファイルの自動生成</li>
+<li>別アプリケーションからのマイグレーションの利用</li>
+<li>水平分割したデータベースへのマイグレーション</li>
+<li>複数データベースを跨るトランザクション（XA トランザクション）</li>
+</ul>
+
+<p>それぞれ説明していきます。</p>
+
+<h2>
+<span id="マイグレーションファイルの自動生成" class="fragment"></span><a href="#%E3%83%9E%E3%82%A4%E3%82%B0%E3%83%AC%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%81%AE%E8%87%AA%E5%8B%95%E7%94%9F%E6%88%90"><i class="fa fa-link"></i></a>マイグレーションファイルの自動生成</h2>
+
+<p>Yacto は、特にマイグレーション周りが Ecto と異なります。<br>
+Ecto はスキーマとマイグレーションを別で定義していましたが、Yacto は <strong>スキーマからマイグレーションファイルを自動的に出力します</strong>。</p>
+
+<p>具体的には、以下の様にスキーマを定義したとして、</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/player.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">Schema</span><span class="p">,</span> <span class="ss">dbname:</span> <span class="ss">:player</span>
+
+  <span class="n">schema</span> <span class="nv">@auto_source</span> <span class="k">do</span>
+    <span class="c1"># sharding key</span>
+    <span class="n">field</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:string</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">]</span>
+    <span class="n">field</span> <span class="ss">:hp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">default:</span> <span class="mi">0</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">]</span>
+    <span class="n">index</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">unique:</span> <span class="no">true</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>この状態で <code>mix yacto.gen.migration</code> を実行すると、以下の様なマイグレーションファイルが出力されます。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">priv/migrations/2017-11-22T045225_my_app.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Migration20171122045225</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Migration</span>
+
+  <span class="k">def</span> <span class="n">change</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">create</span> <span class="n">table</span><span class="p">(</span><span class="s2">"my_app_player"</span><span class="p">)</span>
+    <span class="n">alter</span> <span class="n">table</span><span class="p">(</span><span class="s2">"my_app_player"</span><span class="p">)</span> <span class="k">do</span>
+      <span class="n">add</span><span class="p">(</span><span class="ss">:hp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">])</span>
+      <span class="n">add</span><span class="p">(</span><span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:string</span><span class="p">,</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">])</span>
+    <span class="k">end</span>
+    <span class="n">create</span> <span class="n">index</span><span class="p">(</span><span class="s2">"my_app_player"</span><span class="p">,</span> <span class="p">[</span><span class="ss">:player_id</span><span class="p">],</span> <span class="p">[</span><span class="ss">name:</span> <span class="s2">"player_id_index"</span><span class="p">,</span> <span class="ss">unique:</span> <span class="no">true</span><span class="p">])</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">change</span><span class="p">(</span><span class="n">_other</span><span class="p">)</span> <span class="k">do</span>
+    <span class="ss">:ok</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">__migration_structures__</span><span class="p">()</span> <span class="k">do</span>
+    <span class="p">[</span>
+      <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span><span class="p">,</span> <span class="p">%</span><span class="no">Yacto</span><span class="o">.</span><span class="no">Migration</span><span class="o">.</span><span class="no">Structure</span><span class="p">{</span><span class="ss">fields:</span> <span class="p">[</span><span class="ss">:id</span><span class="p">,</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:hp</span><span class="p">],</span> <span class="ss">meta:</span> <span class="p">%{</span><span class="ss">attrs:</span> <span class="p">%{</span><span class="ss">hp:</span> <span class="p">%{</span><span class="ss">null:</span> <span class="no">false</span><span class="p">},</span> <span class="ss">player_id:</span> <span class="p">%{</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">}},</span> <span class="ss">indices:</span> <span class="p">%{{[</span><span class="ss">:player_id</span><span class="p">],</span> <span class="p">[</span><span class="ss">unique:</span> <span class="no">true</span><span class="p">]}</span> <span class="o">=&gt;</span> <span class="no">true</span><span class="p">}},</span> <span class="ss">source:</span> <span class="s2">"my_app_player"</span><span class="p">,</span> <span class="ss">types:</span> <span class="p">%{</span><span class="ss">hp:</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">id:</span> <span class="ss">:id</span><span class="p">,</span> <span class="ss">player_id:</span> <span class="ss">:string</span><span class="p">}}},</span>
+    <span class="p">]</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">__migration_version__</span><span class="p">()</span> <span class="k">do</span>
+    <span class="mi">20171122045225</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>あとは <code>mix yacto.migrate</code> を実行すれば、このマイグレーションファイルがデータベースに反映されます。<br>
+もうマイグレーションファイルを自分で記述する必要はありません。</p>
+
+<p>更に、この状態で <code>MyApp.Player</code> スキーマに <code>:mp</code> フィールドを追加して <code>mix yacto.gen.migration</code> を実行すると、以下のマイグレーションファイルが生成されます。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/player.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="k">do</span>
+  <span class="o">...</span>
+
+  <span class="n">schema</span> <span class="nv">@auto_source</span> <span class="k">do</span>
+    <span class="o">...</span>
+
+    <span class="c1"># add a field</span>
+    <span class="n">field</span> <span class="ss">:mp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">default:</span> <span class="mi">0</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">]</span>
+
+    <span class="o">...</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">priv/migrations/2017-11-22T045225_my_app.exs</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Migration20171122052212</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Migration</span>
+
+  <span class="k">def</span> <span class="n">change</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">alter</span> <span class="n">table</span><span class="p">(</span><span class="s2">"my_app_player"</span><span class="p">)</span> <span class="k">do</span>
+      <span class="n">add</span><span class="p">(</span><span class="ss">:mp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">])</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">change</span><span class="p">(</span><span class="n">_other</span><span class="p">)</span> <span class="k">do</span>
+    <span class="ss">:ok</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">__migration_structures__</span><span class="p">()</span> <span class="k">do</span>
+    <span class="p">[</span>
+      <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span><span class="p">,</span> <span class="p">%</span><span class="no">Yacto</span><span class="o">.</span><span class="no">Migration</span><span class="o">.</span><span class="no">Structure</span><span class="p">{</span><span class="ss">fields:</span> <span class="p">[</span><span class="ss">:id</span><span class="p">,</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:hp</span><span class="p">,</span> <span class="ss">:mp</span><span class="p">],</span> <span class="ss">meta:</span> <span class="p">%{</span><span class="ss">attrs:</span> <span class="p">%{</span><span class="ss">hp:</span> <span class="p">%{</span><span class="ss">null:</span> <span class="no">false</span><span class="p">},</span> <span class="ss">mp:</span> <span class="p">%{</span><span class="ss">null:</span> <span class="no">false</span><span class="p">},</span> <span class="ss">player_id:</span> <span class="p">%{</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">}},</span> <span class="ss">indices:</span> <span class="p">%{{[</span><span class="ss">:player_id</span><span class="p">],</span> <span class="p">[</span><span class="ss">unique:</span> <span class="no">true</span><span class="p">]}</span> <span class="o">=&gt;</span> <span class="no">true</span><span class="p">}},</span> <span class="ss">source:</span> <span class="s2">"my_app_player"</span><span class="p">,</span> <span class="ss">types:</span> <span class="p">%{</span><span class="ss">hp:</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">id:</span> <span class="ss">:id</span><span class="p">,</span> <span class="ss">mp:</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">player_id:</span> <span class="ss">:string</span><span class="p">}}},</span>
+    <span class="p">]</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">__migration_version__</span><span class="p">()</span> <span class="k">do</span>
+    <span class="mi">20171122052212</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p>このように、以前からの差分だけがマイグレーションファイルに出力されます。<br>
+<code>mix yacto.migrate</code> を実行すれば、このマイグレーションファイルがデータベースに反映されます。</p>
+
+<p>もしマイグレーションファイルが１つもデータベースに適用されていなかったら、上記の２つのマイグレーションファイルが順番に適用されます。</p>
+
+<h2>
+<span id="別アプリケーションからのマイグレーションの利用" class="fragment"></span><a href="#%E5%88%A5%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%8B%E3%82%89%E3%81%AE%E3%83%9E%E3%82%A4%E3%82%B0%E3%83%AC%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%AE%E5%88%A9%E7%94%A8"><i class="fa fa-link"></i></a>別アプリケーションからのマイグレーションの利用</h2>
+
+<p>先程作った <code>my_app</code> アプリケーションを利用する <code>other_app</code> アプリケーションがあったとします。<br>
+<code>my_app</code> はデータベース利用しているので、<code>other_app</code> 上で <code>my_app</code> のためのマイグレーションを行う必要があります。<br>
+Yacto を使えば、<code>config/config.exs</code> を適切に書いた後、<code>other_app</code> で以下のコマンドを実行するだけで <code>my_app</code> のマイグレーションができます。</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>mix yacto.migrate --app my_app
+</pre></div></div>
+
+<p>Ecto では、他のアプリケーションが必要としているマイグレーションを自分で書くか、各アプリケーションが指定したバラバラな方法でマイグレーションを行う必要がありました。<br>
+Yacto を使っているアプリケーションでは、全て同じ方法でマイグレーションができます。</p>
+
+<h2>
+<span id="水平分割したデータベースへのマイグレーション" class="fragment"></span><a href="#%E6%B0%B4%E5%B9%B3%E5%88%86%E5%89%B2%E3%81%97%E3%81%9F%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9%E3%81%B8%E3%81%AE%E3%83%9E%E3%82%A4%E3%82%B0%E3%83%AC%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3"><i class="fa fa-link"></i></a>水平分割したデータベースへのマイグレーション</h2>
+
+<p>例えば <code>MyApp.Player</code> スキーマを水平分割した場合、このスキーマのマイグレーションファイルを複数の Repo に適用する必要があります。<br>
+これは、設定ファイルに以下の様に書くだけで出来ます。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">config/config.exs</span></div>
+<div class="highlight"><pre><span class="n">config</span> <span class="ss">:yacto</span><span class="p">,</span> <span class="ss">:databases</span><span class="p">,</span>
+  <span class="p">%{</span>
+    <span class="ss">default:</span> <span class="p">%{</span>
+      <span class="ss">module:</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="no">Single</span><span class="p">,</span>
+      <span class="ss">repo:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Default</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="ss">player:</span> <span class="p">%{</span>
+      <span class="ss">module:</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="no">Shard</span><span class="p">,</span>
+      <span class="ss">repos:</span> <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Player0</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Player1</span><span class="p">],</span>
+    <span class="p">},</span>
+  <span class="p">}</span>
+</pre></div>
+</div>
+
+<p><code>MyApp.Player</code> に以下のコードがあったことを思い出して下さい。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">lib/my_app/player.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">Schema</span><span class="p">,</span> <span class="ss">dbname:</span> <span class="ss">:player</span>
+
+  <span class="o">...</span>
+</pre></div>
+</div>
+
+<p>この <code>:player</code> が、<code>MyApp.Player</code> が所属する Repo のグループ名です。<br>
+<code>MyApp.Player</code> は <code>:player</code> という Repo グループに所属しており、<code>:player</code> Repo グループは設定ファイルから <code>MyApp.Repo.Player0</code> と <code>MyApp.Repo.Player1</code> の Repo に紐付いていることが分かります。</p>
+
+<p>設定ファイルを書いたら、あとは <code>mix yacto.migrate</code> を実行するだけです。<br>
+<code>MyApp.Player</code> のマイグレーションファイルが <code>MyApp.Repo.Player0</code> と <code>MyApp.Repo.Player1</code> に適用されます。</p>
+
+<p>水平分割したデータベースを利用する時には、<code>Yacto.DB.repo/2</code> を使って Repo を取得します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">repo</span> <span class="o">=</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="n">repo</span><span class="p">(</span><span class="ss">:player</span><span class="p">,</span> <span class="n">player_id</span><span class="p">)</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="o">|&gt;</span> <span class="n">repo</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</pre></div></div>
+
+<p>あるいは、<code>schema.repo/1</code> を使っても構いません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">repo</span> <span class="o">=</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span><span class="o">.</span><span class="n">repo</span><span class="p">(</span><span class="n">player_id</span><span class="p">)</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="o">|&gt;</span> <span class="n">repo</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+</pre></div></div>
+
+<h3>
+<span id="他のアプリケーションから利用する" class="fragment"></span><a href="#%E4%BB%96%E3%81%AE%E3%82%A2%E3%83%97%E3%83%AA%E3%82%B1%E3%83%BC%E3%82%B7%E3%83%A7%E3%83%B3%E3%81%8B%E3%82%89%E5%88%A9%E7%94%A8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>他のアプリケーションから利用する</h3>
+
+<p>もちろん、この水平分割した <code>my_app</code> アプリケーションを <code>other_app</code> で利用することもできます。<br>
+<code>other_app</code> で以下の様に設定ファイル書いて、</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">config/config.exs</span></div>
+<div class="highlight"><pre><span class="n">config</span> <span class="ss">:yacto</span><span class="p">,</span> <span class="ss">:databases</span><span class="p">,</span>
+  <span class="p">%{</span>
+    <span class="ss">default:</span> <span class="p">%{</span>
+      <span class="ss">module:</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="no">Single</span><span class="p">,</span>
+      <span class="ss">repo:</span> <span class="no">OtherApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Default</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="ss">player:</span> <span class="p">%{</span>
+      <span class="ss">module:</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="no">Shard</span><span class="p">,</span>
+      <span class="ss">repos:</span> <span class="p">[</span><span class="no">OtherApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Player0</span><span class="p">,</span> <span class="no">OtherApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Player1</span><span class="p">,</span> <span class="no">OtherApp</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Player2</span><span class="p">],</span>
+    <span class="p">},</span>
+  <span class="p">}</span>
+</pre></div>
+</div>
+
+<p><code>mix yacto.migrate --app my_app</code> を実行すると、<code>OtherApp.Repo.Player0</code> と <code>OtherApp.Repo.Player1</code> と <code>OtherApp.Repo.Player2</code> に <code>MyApp.Player</code> スキーマのマイグレーションファイルが適用されます。</p>
+
+<h2>
+<span id="複数データベースを跨るトランザクションxa-トランザクション" class="fragment"></span><a href="#%E8%A4%87%E6%95%B0%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9%E3%82%92%E8%B7%A8%E3%82%8B%E3%83%88%E3%83%A9%E3%83%B3%E3%82%B6%E3%82%AF%E3%82%B7%E3%83%A7%E3%83%B3xa-%E3%83%88%E3%83%A9%E3%83%B3%E3%82%B6%E3%82%AF%E3%82%B7%E3%83%A7%E3%83%B3"><i class="fa fa-link"></i></a>複数データベースを跨るトランザクション（XA トランザクション）</h2>
+
+<p><code>Yacto.transaction/2</code> を使うと、複数のデータベースを指定してトランザクションを発行できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># ２つ以上の Repo が指定されているので XA トランザクションを発行する</span>
+<span class="no">Yacto</span><span class="o">.</span><span class="n">transaction</span><span class="p">([</span><span class="ss">:default</span><span class="p">,</span>
+                   <span class="p">{</span><span class="ss">:player</span><span class="p">,</span> <span class="n">player_id1</span><span class="p">},</span>
+                   <span class="p">{</span><span class="ss">:player</span><span class="p">,</span> <span class="n">player_id2</span><span class="p">}],</span> <span class="k">fn</span> <span class="o">-&gt;</span>
+  <span class="n">default_repo</span> <span class="o">=</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="n">repo</span><span class="p">(</span><span class="ss">:default</span><span class="p">)</span>
+  <span class="n">player1_repo</span> <span class="o">=</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="n">repo</span><span class="p">(</span><span class="ss">:player</span><span class="p">,</span> <span class="n">player_id1</span><span class="p">)</span>
+  <span class="n">player2_repo</span> <span class="o">=</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">DB</span><span class="o">.</span><span class="n">repo</span><span class="p">(</span><span class="ss">:player</span><span class="p">,</span> <span class="n">player_id2</span><span class="p">)</span>
+
+  <span class="c1"># ここら辺でデータベースを操作する</span>
+  <span class="o">...</span>
+
+<span class="c1"># ここで全ての XA トランザクションがコミットされる</span>
+<span class="k">end</span><span class="p">)</span>
+</pre></div></div>
+
+<p>以下の３つの Repo に対してトランザクションを行います。</p>
+
+<ul>
+<li>
+<code>:default</code> の Repo <code>MyApp.Repo.Default</code>
+</li>
+<li>
+<code>player_id1</code> でシャーディングされた Repo</li>
+<li>
+<code>player_id2</code> でシャーディングされた Repo</li>
+</ul>
+
+<p>後ろの２つは、シャードキーによっては同じ Repo になる可能性があるので、利用する Repo は２つか３つのどちらかです。<br>
+２つ以上の Repo を利用してトランザクションを開始する場合、自動的に XA トランザクションになります。</p>
+
+<p>XA トランザクションは確実に不整合が防げる訳ではありませんが、別々でトランザクションを発行するよりは防げます。<br>
+ただしこのライブラリでは <code>XA RECOVER</code> に残ったトランザクションを解決する仕組みを提供していないので、別途用意する必要があります。</p>
+
+<h1>
+<span id="yacto-のスキーマ" class="fragment"></span><a href="#yacto-%E3%81%AE%E3%82%B9%E3%82%AD%E3%83%BC%E3%83%9E"><i class="fa fa-link"></i></a>Yacto のスキーマ</h1>
+
+<p>Yacto のスキーマについて、まだ説明していない部分があるので、もう少し詳しく説明します。</p>
+
+<p>最初に書いたように、Yacto のスキーマは以下の様に定義します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Player</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">Schema</span><span class="p">,</span> <span class="ss">dbname:</span> <span class="ss">:player</span>
+
+  <span class="n">schema</span> <span class="nv">@auto_source</span> <span class="k">do</span>
+    <span class="n">field</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:string</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">]</span>
+    <span class="n">field</span> <span class="ss">:hp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">default:</span> <span class="mi">0</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">]</span>
+    <span class="n">index</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">unique:</span> <span class="no">true</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>基本的には <code>Ecto.Schema</code> と変わりません。<br>
+<code>Yacto.Schema</code> で生成したスキーマは、<code>Ecto.Schema</code> で生成したスキーマと互換性があります。<br>
+ただしマイグレーションに関する設定が含まれるので、<code>Ecto.Schema</code> よりもいくつか設定が増えています。</p>
+
+<h2>
+<span id="テーブル名の自動生成" class="fragment"></span><a href="#%E3%83%86%E3%83%BC%E3%83%96%E3%83%AB%E5%90%8D%E3%81%AE%E8%87%AA%E5%8B%95%E7%94%9F%E6%88%90"><i class="fa fa-link"></i></a>テーブル名の自動生成</h2>
+
+<p><code>@auto_source</code> には、モジュール名から自動的に生成したテーブル名が定義されています。<br>
+大抵の場合、自動的に決まった名前で問題ないと思うので、常に <code>@auto_source</code> を使うので問題ないでしょう。</p>
+
+<h2>
+<span id="メタ情報" class="fragment"></span><a href="#%E3%83%A1%E3%82%BF%E6%83%85%E5%A0%B1"><i class="fa fa-link"></i></a>メタ情報</h2>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>    <span class="n">field</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">:string</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">,</span> <span class="ss">size:</span> <span class="mi">64</span><span class="p">]</span>
+    <span class="n">field</span> <span class="ss">:hp</span><span class="p">,</span> <span class="ss">:integer</span><span class="p">,</span> <span class="ss">default:</span> <span class="mi">0</span><span class="p">,</span> <span class="ss">meta:</span> <span class="p">[</span><span class="ss">null:</span> <span class="no">false</span><span class="p">]</span>
+</pre></div></div>
+
+<p>ここは <code>Ecto.Schema</code> の <code>field/3</code> 関数とほとんど同じですが、<code>:meta</code> オプションがあるという点で異なります。<br>
+<code>:meta</code> オプションはマイグレーションに関する情報を入れる場所で、そのフィールドが null 可能かどうかや、文字列のサイズ等を指定します。</p>
+
+<p>指定可能なオプションは以下の通りです。</p>
+
+<ul>
+<li>
+<code>:null</code>: そのフィールドが null 可能かどうか（デフォルトでは <code>true</code>）</li>
+<li>
+<code>:size</code>: 文字列のサイズ（<code>VARCHAR(255)</code> の <code>255</code> に相当する部分）（デフォルトでは <code>255</code>）</li>
+<li>
+<code>:default</code>: そのフィールドのデフォルト値（デフォルトでは各型の初期値か、<code>opts[:default]</code> が存在している場合はその値が入る）</li>
+<li>
+<code>:index</code>: このフィールドでインデックスを張るかどうか（デフォルトでは <code>false</code>）</li>
+<li>
+<code>:type</code>: マイグレーション時の型を指定する（デフォルトでは <code>field/3</code> で指定した型）</li>
+</ul>
+
+<h2>
+<span id="インデックス" class="fragment"></span><a href="#%E3%82%A4%E3%83%B3%E3%83%87%E3%83%83%E3%82%AF%E3%82%B9"><i class="fa fa-link"></i></a>インデックス</h2>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre>    <span class="n">index</span> <span class="ss">:player_id</span><span class="p">,</span> <span class="ss">unique:</span> <span class="no">true</span>
+</pre></div></div>
+
+<p><code>index/2</code> でインデックスを生成できます。<br>
+<code>field/3</code> の <code>:meta</code> オプションの中でもインデックスを指定できますが、<code>index/2</code> を使うと複合インデックスやユニークインデックスも生成できます。</p>
+
+<p>複合インデックスにするなら <code>index [:player_id, :hp]</code> のようにリストで指定します。<br>
+ユニークインデックスにするならオプションで <code>unique: true</code> を指定します。</p>
+
+<h2>
+<span id="外部キー制約" class="fragment"></span><a href="#%E5%A4%96%E9%83%A8%E3%82%AD%E3%83%BC%E5%88%B6%E7%B4%84"><i class="fa fa-link"></i></a>外部キー制約</h2>
+
+<p>対応していません。<br>
+というのも、gumi では歴史的な経緯があって、外部キー制約を付けない方向でやっているからです。<sup id="fnref2"><a href="#fn2" rel="footnote" title="はるか昔、負荷に耐えられずデータベースを分割した際、最初は垂直分割をすることになって、この時に外部キー制約を外す必要があったそうです。その後水平分割に移行していったけれども、その時には外部キー制約を付ける文化が失われていた、ということらしいです。">2</a></sup></p>
+
+<p>自分としては特に困ってないので、しばらくは対応しないと思います。<br>
+必要だと思ったのであれば、ぜひ実装して pull req 下さい。</p>
+
+<h1>
+<span id="便利関数" class="fragment"></span><a href="#%E4%BE%BF%E5%88%A9%E9%96%A2%E6%95%B0"><i class="fa fa-link"></i></a>便利関数</h1>
+
+<p>Yacto は、Repo に便利な関数を定義する <code>Yacto.Repo.Helper</code> を提供しています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Ecto</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span> <span class="ss">otp_app:</span> <span class="ss">:my_app</span>
+  <span class="kn">use</span> <span class="no">Yacto</span><span class="o">.</span><span class="no">Repo</span><span class="o">.</span><span class="no">Helper</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これによって、以下の関数が定義されます。</p>
+
+<ul>
+<li><code>def count(queryable, clauses, opts \\ [])</code></li>
+</ul>
+
+<p><code>Ecto.Query.where</code> で絞り込んで要素数を返します。</p>
+
+<ul>
+<li><code>def find(queryable, clauses, opts \\ [])</code></li>
+</ul>
+
+<p><code>Ecto.Query.where</code> で絞り込んで Repo から取得します。</p>
+
+<ul>
+<li><code>def delete_by(queryable, clauses, opts \\ [])</code></li>
+<li><code>def delete_by!(queryable, clauses, opts \\ [])</code></li>
+</ul>
+
+<p><code>Ecto.Query.where</code> で絞り込んで Repo から削除します。<br>
+<code>delete_by!/3</code> は、削除した件数が 0 だった時に <code>Ecto.NoResultsError</code> 例外を投げます。</p>
+
+<ul>
+<li><code>def find_for_update(queryable, clauses, opts \\ [])</code></li>
+<li><code>get_for_update(queryable, id, opts \\ [])</code></li>
+<li><code>get_for_update!(queryable, id, opts \\ [])</code></li>
+<li><code>get_by_for_update(queryable, clauses, opts \\ [])</code></li>
+<li><code>get_by_for_update!(queryable, clauses, opts \\ [])</code></li>
+</ul>
+
+<p><code>SELECT ... FOR UPDATE</code> のクエリを使って要素を取得する関数です。</p>
+
+<p><code>find_for_update/3</code> は <code>find/3</code> のクエリに <code>Ecto.Query.lock("FOR UPDATE")</code> を付けただけの関数です。<br>
+<code>get_for_update/3</code> や <code>get_by_for_update/3</code> 関数は、<code>Ecto.Repo.get</code> や <code>Ecto.Repo.get_by</code> のクエリに <code>Ecto.Query.lock("FOR UPDATE")</code> を付けただけの関数です。</p>
+
+<ul>
+<li><code>get_by_or_new(queryable, clauses, default_struct, opts \\ [])</code></li>
+<li><code>get_by_or_insert_for_update(queryable, clauses, default_struct_or_changeset, opts \\ [])</code></li>
+</ul>
+
+<p><code>get_by_or_new/4</code> は、まずレコードを取得してみて、あればそのレコードを、無ければデフォルト値 <code>default_struct</code> を返します。無かった場合でもデータベースへの挿入は行いません。<br>
+ロックを取らないので、この <code>get_by_or_new/4</code> で得られた値を使ってデータベースへ挿入や更新をしてはいけません。<br>
+戻り値は <code>{record, defaulted}</code> の２要素のタプルになっていて、1要素目には取得できたレコード（あるいはデフォルト値）が、2要素目にはデフォルト値を返したかどうかのフラグが設定されます。</p>
+
+<p><code>get_by_or_insert_for_update/4</code> は、<code>get_by_or_new/4</code> の排他ロックを取るバージョンです。<br>
+まずレコードを取得してみて、あればそのレコードを、無ければ新規に <code>default_struct_or_changeset</code> を挿入して返します。この時、返されるレコードは排他ロックされます。<br>
+戻り値は <code>{record, created}</code> の２要素のタプルになっていて、1要素目には取得できたレコード（あるいは挿入したデフォルト値）が、2要素目には新しく挿入したかどうかのフラグが設定されます。</p>
+
+<h1>
+<span id="終わりに" class="fragment"></span><a href="#%E7%B5%82%E3%82%8F%E3%82%8A%E3%81%AB"><i class="fa fa-link"></i></a>終わりに</h1>
+
+<p>Yacto ライブラリを作ることで、Ecto に対する不満はほぼ無くなりました。<br>
+バグや要望があれば issue や pull req を下さい。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>お手伝い先の会社（株式会社gumi）の仕事として作ったので、gumi オーガナイゼーション下にあります。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>はるか昔、負荷に耐えられずデータベースを分割した際、最初は垂直分割をすることになって、この時に外部キー制約を外す必要があったそうです。その後水平分割に移行していったけれども、その時には外部キー制約を付ける文化が失われていた、ということらしいです。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

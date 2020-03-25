@@ -1,0 +1,105 @@
+<p><a href="https://hexdocs.pm/plug/readme.html" rel="nofollow noopener" target="_blank">Plug</a> には、起動時に任意の値を渡すことで、各ハンドラでそれを参照できるようになっています。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">my_router.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyRouter</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">opts</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">)</span>
+    <span class="n">conn</span> <span class="o">|&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="n">body</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">application.ex</span></div>
+<div class="highlight"><pre><span class="c1"># ここで指定した値を MyRouter で使える</span>
+<span class="n">opts</span> <span class="o">=</span> <span class="p">[</span><span class="ss">foo:</span> <span class="s2">"bar"</span><span class="p">]</span>
+
+<span class="c1"># child_spec を使う場合</span>
+<span class="no">Plug</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Cowboy</span><span class="o">.</span><span class="n">child_spec</span><span class="p">(</span><span class="ss">:http</span><span class="p">,</span> <span class="no">MyRouter</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="ss">port:</span> <span class="mi">8000</span><span class="p">)</span>
+
+<span class="c1"># http を使う場合</span>
+<span class="no">Plug</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Cowboy</span><span class="o">.</span><span class="n">http</span><span class="p">(</span><span class="no">MyRouter</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="ss">port:</span> <span class="mi">8000</span><span class="p">)</span>
+</pre></div>
+</div>
+
+<p>しかし <code>Plug.Builder</code> や <code>Plug.Router</code> を使っている場合、これは動きません。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">application.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyRouter</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span>
+
+  <span class="n">plug</span> <span class="ss">:fun</span>
+
+  <span class="k">def</span> <span class="n">fun</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># エラー！opts に :foo が入っていない</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">)</span>
+    <span class="n">conn</span> <span class="o">|&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="n">body</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p><code>opts</code> の中を見てみると、空データ <code>[]</code> になっています。<br>
+実はこの <code>opts</code> は、起動時に渡した値ではなく、<code>plug :fun</code> の第二引数に渡した値になります。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">application.ex</span></div>
+<div class="highlight"><pre>  <span class="n">plug</span> <span class="ss">:fun</span><span class="p">,</span> <span class="ss">foo:</span> <span class="s2">"bar"</span><span class="p">,</span> <span class="ss">hoge:</span> <span class="s2">"fuga"</span>
+
+  <span class="k">def</span> <span class="n">fun</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">assert</span> <span class="p">[</span><span class="ss">foo:</span> <span class="s2">"bar"</span><span class="p">,</span> <span class="ss">hoge:</span> <span class="s2">"fuga"</span><span class="p">]</span> <span class="o">==</span> <span class="n">opts</span>
+  <span class="k">end</span>
+</pre></div>
+</div>
+
+<p>では起動時に渡した <code>opts</code> はどうなったかというと……<a href="https://github.com/elixir-lang/plug/blob/v1.3.0/lib/plug/builder.ex#L134" rel="nofollow noopener" target="_blank">捨てられます</a><sup id="fnref1"><a href="#fn1" rel="footnote" title="plug_builder_callの第二引数に渡されている _ に起動時の opts が入っていますが、見事に捨てられています。">1</a></sup>。</p>
+
+<p>何でこんな設計にしたのか全く理解できませんが、とりあえず、このままでは<code>Plug.Builder</code>や<code>Plug.Router</code>利用時に<code>opts</code>が利用できません。</p>
+
+<p>そこで、以下のように<code>call/2</code>をオーバーライドすることで<code>opts</code>を使えるようにします。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">application.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyRouter</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span>
+
+  <span class="n">plug</span> <span class="ss">:fun</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># 起動時のoptsをconnに格納</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="ss">:opts</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+    <span class="kn">super</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">fun</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># connに格納したoptsを取り出す</span>
+    <span class="n">opts</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">assigns</span><span class="o">.</span><span class="n">opts</span>
+    <span class="n">body</span> <span class="o">=</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">)</span>
+    <span class="n">conn</span> <span class="o">|&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="n">body</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p><code>Plug.Builder</code> のデフォルト実装の <code>call/2</code> をオーバーライドして、<code>opts</code> を <code>conn</code> の中に入れておきます。<br>
+これで無事起動時の <code>opts</code> が <code>Plug.Builder</code> 利用時でも使えるようになりました。<br>
+<code>Plug.Router</code> 利用時でも同じように使えるはずです。<br>
+起動時の <code>opts</code> を使いたくなった場合はこのようにするといいでしょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>plug_builder_call</code>の第二引数に渡されている <code>_</code> に起動時の <code>opts</code> が入っていますが、見事に捨てられています。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

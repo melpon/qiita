@@ -1,0 +1,60 @@
+<p>EUnitでは、<code>_test_</code> で終わる関数を定義すると、テストジェネレータとして動作します。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nf">foo_test_</span><span class="p">()</span> <span class="o">=</span> <span class="p">{</span><span class="n">setup</span><span class="p">,</span> <span class="k">fun</span> <span class="n">setup</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="k">fun</span> <span class="n">cleanup</span><span class="o">/</span><span class="mi">0</span><span class="p">,</span> <span class="k">fun</span> <span class="n">foo</span><span class="o">/</span><span class="mi">0</span><span class="p">}.</span>
+</pre></div></div>
+
+<p>この様に、開始時に呼ぶ関数、終了時に呼ぶ関数、実際のテストを記述することで、テスト用の関数を自動生成してくれます。</p>
+
+<p>引数の無い単純なテストならこれで問題ないですが、時々、<code>setup</code>関数の戻り値を使ってテストを書きたいことがあります。</p>
+
+<p>例えば、テストのために特定のプロセスを事前に起動しておく必要があるけれども、テストごとに立てておくプロセス数が異なる場合です。<br>
+この場合、setup時にプロセスを起動しておき、それらのPidをテストで利用したくなるのです。</p>
+
+<p>その場合、以下のように書くことでsetup時に生成した値を使えます。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% setup時にN個のプロセスを起動しておく
+</span><span class="nf">setup</span><span class="p">(</span><span class="nv">N</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="nn">lists</span><span class="p">:</span><span class="nf">map</span><span class="p">(</span><span class="k">fun</span> <span class="p">(_)</span> <span class="o">-&gt;</span> <span class="nn">hoge</span><span class="p">:</span><span class="nb">spawn_link</span><span class="p">()</span> <span class="k">end</span><span class="p">,</span> <span class="nn">lists</span><span class="p">:</span><span class="nf">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nv">N</span><span class="p">)).</span>
+
+<span class="c">%% 開始したプロセスを全て終了させておく
+</span><span class="nf">cleanup</span><span class="p">(</span><span class="nv">Pids</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="nn">lists</span><span class="p">:</span><span class="nf">foreach</span><span class="p">(</span><span class="k">fun</span> <span class="p">(</span><span class="nv">Pid</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nn">gen_server</span><span class="p">:</span><span class="nf">stop</span><span class="p">(</span><span class="nv">Pid</span><span class="p">)).</span>
+
+<span class="c">%% Pidsを使っていろいろテストする
+</span><span class="nf">bar</span><span class="p">(</span><span class="nv">Pids</span><span class="p">)</span> <span class="o">-&gt;</span>
+  <span class="p">...</span>
+
+<span class="nf">bar_test_</span><span class="p">()</span> <span class="o">=</span> <span class="p">{</span><span class="n">setup</span><span class="p">,</span>
+               <span class="c">%% 10プロセス起動
+</span>               <span class="k">fun</span> <span class="p">()</span> <span class="o">-&gt;</span> <span class="nf">setup</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span> <span class="k">end</span><span class="p">,</span>
+               <span class="k">fun</span> <span class="p">(</span><span class="nv">Pids</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nf">cleanup</span><span class="p">(</span><span class="nv">Pids</span><span class="p">)</span> <span class="k">end</span><span class="p">,</span>
+               <span class="c">%% Instantiatorを使ってPidsをテストに渡す
+</span>               <span class="k">fun</span> <span class="p">(</span><span class="nv">Pids</span><span class="p">)</span> <span class="o">-&gt;</span>
+                       <span class="k">fun</span> <span class="p">()</span> <span class="o">-&gt;</span>
+                               <span class="nf">bar</span><span class="p">(</span><span class="nv">Pids</span><span class="p">)</span>
+                       <span class="k">end</span>
+               <span class="k">end</span><span class="p">}.</span>
+</pre></div></div>
+
+<p><code>bar_test_/0</code>のタプルの最後で渡している関数は Instantiator と呼ばれるもので、setup時の関数の戻り値を引数として受け取り、テスト関数を返す関数として定義します<sup id="fnref1"><a href="#fn1" rel="footnote" title="他にも返せる値はありますが、詳細はドキュメントを参照">1</a></sup>。</p>
+
+<p>こうすることで、無事setup時に生成した値をテストで利用できます。<br>
+EUnitはドキュメントをよく読むと結構いろいろな機能があるので、一通り見ておくことをお勧めします。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/doc/apps/eunit/chapter.html" rel="nofollow noopener" target="_blank">Erlang -- EUnit - a Lightweight Unit Testing Framework for Erlang</a></li>
+</ul>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>他にも返せる値はありますが、詳細は<a href="http://erlang.org/doc/apps/eunit/chapter.html#Fixtures" rel="nofollow noopener" target="_blank">ドキュメント</a>を参照 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,62 @@
+<p><a href="http://erlang.org/doc/man/timer.html" rel="nofollow noopener" target="_blank"><code>timer</code>モジュール</a>は、一定時間後に指定した関数を呼び出したりメッセージを送ったりできる便利なモジュールです。<br>
+<code>timer</code>モジュールは便利ですが、いくつか落とし穴もあります。<br>
+このモジュールを利用するにあたって注意する点について書いていきます。</p>
+
+<h2>
+<span id="timerモジュールは遅い" class="fragment"></span><a href="#timer%E3%83%A2%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB%E3%81%AF%E9%81%85%E3%81%84"><i class="fa fa-link"></i></a><code>timer</code>モジュールは遅い</h2>
+
+<p>というのも、タイマーの処理は１プロセスで全て行っているからです。<br>
+そして、<code>timer:send_after/{2,3}</code> や <code>timer:cancel/1</code> は、<code>gen_server:call/3</code> を使ってそのプロセスの処理が完了するのを待っています。</p>
+
+<p>例えば <code>timer:send_after/3</code> は以下のようなコードになっています。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nb">send_after</span><span class="p">(</span><span class="nv">Time</span><span class="p">,</span> <span class="nv">Pid</span><span class="p">,</span> <span class="nv">Message</span><span class="p">)</span> <span class="o">-&gt;</span>
+    <span class="nn">gen_server</span><span class="p">:</span><span class="nf">call</span><span class="p">(</span><span class="n">timer_server</span><span class="p">,</span> <span class="p">{</span><span class="n">apply_after</span><span class="p">,</span> <span class="p">{</span><span class="o">?</span><span class="nv">MODULE</span><span class="p">,</span> <span class="nb">send</span><span class="p">,</span> <span class="p">[</span><span class="nv">Pid</span><span class="p">,</span> <span class="nv">Message</span><span class="p">]}},</span> <span class="n">infinity</span><span class="p">).</span>
+</pre></div></div>
+
+<p>このように <code>gen_server:call(timer_server, ..., infinity)</code> という書き方をしているため、複数のプロセスから大量に <code>timer:send_after/{2,3}</code> や <code>timer:cancel/1</code> を呼んでいると、段々とタイマーサーバのメッセージキューが詰まっていくことになります。</p>
+
+<p>なのでタイマーサーバが詰まるようなら、同じような実装で複数のプロセスに分散してるようなタイマーサーバを作る必要があります。<br>
+そのうち標準に分散タイマーが入るという話も聞きましたが本当かどうかは知りません。</p>
+
+<p>この問題に気がついたのは、自分のプログラムでタイマーサーバが詰まったからです。<br>
+ただ、このケースではコールバックのタイミングは少々ずれてても構わなかったから、<code>timer:send_interval/{2,3}</code> を最初に一度だけ呼び出し、無駄でもいいから定期的にコールバックを受けるようにして、必要であればそこで処理を行うようにすることで解決しました。</p>
+
+<p>複数のプロセスから <code>timer</code> モジュールを呼び出す可能性がある場合は注意した方がいいでしょう。</p>
+
+<h2>
+<span id="apply系の呼び出しについて" class="fragment"></span><a href="#apply%E7%B3%BB%E3%81%AE%E5%91%BC%E3%81%B3%E5%87%BA%E3%81%97%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>apply系の呼び出しについて</h2>
+
+<p><code>timer:apply_after/4</code> や <code>timer:apply_interval/4</code> は、指定した時間後に MFA 形式で指定した任意の関数を呼び出してくれます。</p>
+
+<p>しかし、コールバックされた関数の中で <code>timer:sleep(1000)</code> などを実行すると、タイマーが1プロセスであるため、タイマーサーバが止まり、全てのタイマー呼び出しが止まってしまうのではないかという心配があります。<br>
+心配だったので実装を見たのですが、問題ありませんでした。</p>
+
+<p>というのも、タイマーサーバはちゃんと関数を呼び出す前に新しくプロセスを作り、その新しいプロセス上で関数を呼び出すようになっていました。<br>
+なのでコールバックされる関数内で掛かる時間については気にしなくても良さそうです。</p>
+
+<p>ただ、どこにもリンクされていない、完全に浮いた状態のプロセスから呼び出されることになるため、クラッシュした際の世話が難しくなることに注意する必要があります。<br>
+また、指定された関数が実行されている最中に、別のプロセスから同じ関数が呼ばれる可能性があることにも注意した方がいいでしょう。</p>
+
+<h2>
+<span id="apply_interval4で生成したタイマーの削除" class="fragment"></span><a href="#apply_interval4%E3%81%A7%E7%94%9F%E6%88%90%E3%81%97%E3%81%9F%E3%82%BF%E3%82%A4%E3%83%9E%E3%83%BC%E3%81%AE%E5%89%8A%E9%99%A4"><i class="fa fa-link"></i></a><code>apply_interval/4</code>で生成したタイマーの削除</h2>
+
+<p><code>timer:apply_interval/4</code> 関数を呼び出したプロセスが死んだ場合、そのタイマーは削除されます。<br>
+例えば</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="nb">spawn</span><span class="p">(</span><span class="k">fun</span> <span class="p">()</span> <span class="o">-&gt;</span> <span class="nn">timer</span><span class="p">:</span><span class="nf">apply_interval</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="p">__</span><span class="nv">MODULE__</span><span class="p">,</span> <span class="n">foo</span><span class="p">,</span> <span class="p">[])</span> <span class="k">end</span><span class="p">)</span>
+</pre></div></div>
+
+<p>という処理を書くと、<code>timer:apply_interval/4</code> でタイマーをセットした直後にプロセスが死ぬため、セットされたタイマーは即座に削除されます。<br>
+そのため <code>__MODULE__:foo()</code> が定期的に呼ばれたりはしません。</p>
+
+<p>これは <code>timer:send_interval/{2,3}</code> でも同様で、メッセージ送信先のプロセスが死んだ場合には自動的にタイマーが削除されます。<br>
+ただしプロセスが死んでたらメッセージが受け取れないのは当然なので、あまり気にする必要は無さそうです。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="https://github.com/erlang/otp/blob/f8aef2dcae7162b59efb9513442c9643c9f5159e/lib/stdlib/src/timer.erl" rel="nofollow noopener" target="_blank">otp/timer.erl at f8aef2dcae7162b59efb9513442c9643c9f5159e · erlang/otp</a></li>
+<li><a href="http://erlang.org/doc/man/timer.html" rel="nofollow noopener" target="_blank">Erlang -- timer</a></li>
+</ul>

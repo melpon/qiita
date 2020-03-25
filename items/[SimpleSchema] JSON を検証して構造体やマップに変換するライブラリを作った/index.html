@@ -1,0 +1,367 @@
+<p>JSON の検証と各データ構造への設定を行う SimpleSchema というライブラリを作ったので、その紹介です。<sup id="fnref1"><a href="#fn1" rel="footnote" title="お手伝い先の会社（株式会社gumi）の仕事として作ったので、gumi オーガナイゼーション下にあります。">1</a></sup></p>
+
+<ul>
+<li><a href="https://hex.pm/packages/simple_schema" rel="nofollow noopener" target="_blank">hex.pm</a></li>
+<li><a href="https://github.com/gumi/simple_schema" rel="nofollow noopener" target="_blank">GitHub</a></li>
+</ul>
+
+<h2>
+<span id="動機" class="fragment"></span><a href="#%E5%8B%95%E6%A9%9F"><i class="fa fa-link"></i></a>動機</h2>
+
+<p>HTTP の API サーバを書いていると、よく HTTP の POST リクエストで JSON を受け取ることがありますが、この値が正しいフォーマットかどうかを検証したいことがあります。<br>
+検証だけなら、<a href="http://json-schema.org/" rel="nofollow noopener" target="_blank">JSON Schema</a> を使うという手があり、幸いなことに Elixir には JSON Schema を実装した <a href="https://github.com/jonasschmidt/ex_json_schema" rel="nofollow noopener" target="_blank">ExJsonSchema</a> というライブラリがあります。</p>
+
+<p>しかし、JSON Schema は手で書くのが大変です。もう少し機能を絞った単純なスキーマを使いたいところです。</p>
+
+<p>また、JSON Schema は検証しか行わないため、データにアクセスするのに手間が掛かります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">json</span> <span class="o">=</span> <span class="no">Poison</span><span class="o">.</span><span class="n">decode!</span><span class="p">(</span><span class="n">conn</span><span class="o">.</span><span class="n">body_param</span><span class="p">)</span>
+<span class="ss">:ok</span> <span class="o">=</span> <span class="n">validate</span><span class="p">(</span><span class="n">json</span><span class="p">)</span>
+
+<span class="n">hp</span> <span class="o">=</span> <span class="n">json</span><span class="p">[</span><span class="s2">"player"</span><span class="p">][</span><span class="s2">"hp"</span><span class="p">]</span>
+<span class="c1"># → json.player.hp と書きたい</span>
+
+<span class="n">datetime</span> <span class="o">=</span> <span class="n">json</span><span class="p">[</span><span class="s2">"datetime"</span><span class="p">]</span>                       <span class="c1"># 文字列を取り出して</span>
+<span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">=</span> <span class="no">DateTime</span><span class="o">.</span><span class="n">from_iso8601</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="c1"># DateTime 型に変換する</span>
+<span class="c1"># → json.datetime した段階で DateTime 型であって欲しい</span>
+</pre></div></div>
+
+<p>このように、特に <code>DateTime</code> に変換するといった処理が必要な場合、検証と同時に変換まで済ませたいのです。</p>
+
+<p>そこで、簡単にスキーマを書けるようして、検証を行い、それらのデータを変換するライブラリとして、SimpleSchema というライブラリを作りました。</p>
+
+<h2>
+<span id="使い方" class="fragment"></span><a href="#%E4%BD%BF%E3%81%84%E6%96%B9"><i class="fa fa-link"></i></a>使い方</h2>
+
+<p>以下のように使います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># defschema/1 を使ってスキーマを定義する</span>
+<span class="k">defmodule</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">SimpleSchema</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">defschema:</span> <span class="mi">1</span><span class="p">]</span>
+
+  <span class="n">defschema</span> <span class="p">[</span>
+    <span class="ss">name:</span> <span class="ss">:string</span><span class="p">,</span>
+    <span class="ss">age:</span> <span class="p">{</span><span class="ss">:integer</span><span class="p">,</span> <span class="ss">minimum:</span> <span class="mi">0</span><span class="p">},</span>
+  <span class="p">]</span>
+<span class="k">end</span>
+
+<span class="c1"># JSON 文字列をデコードしたデータを…</span>
+<span class="n">json</span> <span class="o">=</span> <span class="p">%{</span>
+  <span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="s2">"John Smith"</span><span class="p">,</span>
+  <span class="s2">"age"</span> <span class="o">=&gt;</span> <span class="mi">42</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="c1"># Person と一緒に from_json!/2 すると、Person 構造体に値が設定される</span>
+<span class="n">person</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">(</span><span class="no">Person</span><span class="p">,</span> <span class="n">json</span><span class="p">)</span>
+
+<span class="n">assert</span> <span class="n">person</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"John Smith"</span>
+<span class="n">assert</span> <span class="n">person</span><span class="o">.</span><span class="n">age</span> <span class="o">==</span> <span class="mi">42</span>
+</pre></div></div>
+
+<p>このように、<code>defschema/1</code> でスキーマを定義して、<code>SimpleSchema.from_json!/2</code> にそのスキーマと JSON オブジェクトを渡すと、JSON オブジェクトを検証し、指定したスキーマにデータを入れてくれます。</p>
+
+<p>JSON オブジェクトが <code>Person</code> スキーマを満たしていない場合、以下のようにエラーがでます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">bad_json</span> <span class="o">=</span> <span class="p">%{</span>
+  <span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="mi">100</span><span class="p">,</span> <span class="c1"># 文字列ではない</span>
+  <span class="s2">"age"</span> <span class="o">=&gt;</span> <span class="o">-</span><span class="mi">10</span><span class="p">,</span> <span class="c1"># 無効な年齢</span>
+  <span class="s2">"__additional_key__"</span> <span class="o">=&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="c1"># 余分なキー</span>
+<span class="p">}</span>
+
+<span class="c1"># from_json/2 は失敗する</span>
+<span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span><span class="p">}</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json</span><span class="p">(</span><span class="no">Person</span><span class="p">,</span> <span class="n">bad_json</span><span class="p">)</span>
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="n">reason</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>[{"Expected the value to be &gt;= 0", "#/age"},
+ {"Type mismatch. Expected String but got Integer.", "#/name"},
+ {"Schema does not allow additional properties.", "#/__additional_key__"}]
+</pre></div></div>
+
+<p>この <code>Person</code> を内包するスキーマを定義することもできます。<br>
+つまりスキーマはネスト可能です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># Person を内包する Group</span>
+<span class="k">defmodule</span> <span class="no">Group</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">SimpleSchema</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">defschema:</span> <span class="mi">1</span><span class="p">]</span>
+
+  <span class="n">defschema</span> <span class="p">[</span>
+    <span class="ss">group_name:</span> <span class="ss">:string</span><span class="p">,</span>
+    <span class="ss">persons:</span> <span class="p">[</span><span class="no">Person</span><span class="p">],</span>
+  <span class="p">]</span>
+<span class="k">end</span>
+
+<span class="n">json</span> <span class="o">=</span> <span class="p">%{</span>
+  <span class="s2">"group_name"</span> <span class="o">=&gt;</span> <span class="s2">"A Group"</span><span class="p">,</span>
+  <span class="s2">"persons"</span> <span class="o">=&gt;</span> <span class="p">[%{</span>
+    <span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="s2">"John Smith"</span><span class="p">,</span>
+    <span class="s2">"age"</span> <span class="o">=&gt;</span> <span class="mi">42</span><span class="p">,</span>
+  <span class="p">},</span> <span class="p">%{</span>
+    <span class="s2">"name"</span> <span class="o">=&gt;</span> <span class="s2">"YAMADA Taro"</span><span class="p">,</span>
+    <span class="s2">"age"</span> <span class="o">=&gt;</span> <span class="mi">20</span><span class="p">,</span>
+  <span class="p">}],</span>
+<span class="p">}</span>
+
+<span class="n">group</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">(</span><span class="no">Group</span><span class="p">,</span> <span class="n">json</span><span class="p">)</span>
+
+<span class="n">assert</span> <span class="n">group</span><span class="o">.</span><span class="n">group_name</span> <span class="o">==</span> <span class="s2">"A Group"</span>
+<span class="n">assert</span> <span class="no">Enum</span><span class="o">.</span><span class="n">fetch!</span><span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">persons</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">age</span> <span class="o">==</span> <span class="mi">20</span>
+</pre></div></div>
+
+<p><code>Group</code> スキーマを <code>defschema/1</code> で定義していますが、<code>:group_name</code> が文字列であり、<code>:persons</code> が <code>Person</code> の配列であることが、見ればすぐに分かるでしょう。</p>
+
+<p>これによって、共通するスキーマに名前を付けて再利用することができます。</p>
+
+<h2>
+<span id="シンプルスキーマ" class="fragment"></span><a href="#%E3%82%B7%E3%83%B3%E3%83%97%E3%83%AB%E3%82%B9%E3%82%AD%E3%83%BC%E3%83%9E"><i class="fa fa-link"></i></a>シンプルスキーマ</h2>
+
+<p>もう少し詳細に SimpleSchema の機能を説明します。</p>
+
+<p>SimpleSchema ライブラリが定義している、<code>SimpleSchema.from_json/2</code> の第１引数に渡せるスキーマのことを <strong>シンプルスキーマ</strong> と呼びます。<br>
+JSON Schema と比べると大分単純で直感的な構文になっているので「シンプル」と名付けています。</p>
+
+<p>例えば、<code>:integer</code> はシンプルスキーマです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">value</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">(</span><span class="ss">:integer</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="n">assert</span> <span class="n">value</span> <span class="o">==</span> <span class="mi">10</span>
+</pre></div></div>
+
+<p><code>:integer</code> シンプルスキーマは、渡された値が整数であるかを確認し、整数であればその値を戻り値にします。<br>
+整数に制約を付け加えることも可能です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">value</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">({</span><span class="ss">:integer</span><span class="p">,</span> <span class="ss">minimum:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">maximum:</span> <span class="mi">20</span><span class="p">},</span> <span class="mi">5</span><span class="p">)</span>
+<span class="c1"># RuntimeError: [{"Expected the value to be &gt;= 10", "#"}]</span>
+</pre></div></div>
+
+<p><code>{:integer, opts}</code> という書き方もシンプルスキーマになります。<br>
+これは渡された値が整数であり、かつ10から20の範囲内であるかを確認し、正しければその値を戻り値にします。</p>
+
+<p><code>%{}</code> という書き方もシンプルスキーマであり、各フィールドには、更にシンプルスキーマを渡すことができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">schema</span> <span class="o">=</span> <span class="p">%{</span>
+  <span class="ss">value:</span> <span class="p">{</span><span class="ss">:integer</span><span class="p">,</span> <span class="ss">optional:</span> <span class="no">true</span><span class="p">},</span>
+  <span class="ss">point:</span> <span class="p">%{</span>
+    <span class="ss">x:</span> <span class="ss">:integer</span><span class="p">,</span>
+    <span class="ss">y:</span> <span class="ss">:integer</span><span class="p">,</span>
+  <span class="p">},</span>
+<span class="p">}</span>
+<span class="n">data</span> <span class="o">=</span> <span class="p">%{</span>
+  <span class="s2">"point"</span> <span class="o">=&gt;</span> <span class="p">%{</span>
+    <span class="s2">"x"</span> <span class="o">=&gt;</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="s2">"y"</span> <span class="o">=&gt;</span> <span class="mi">20</span><span class="p">,</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+<span class="n">value</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+<span class="c1"># value == %{point: %{x: 10, y: 20}}</span>
+<span class="n">assert</span> <span class="n">value</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">x</span> <span class="o">==</span> <span class="mi">10</span>
+<span class="n">assert</span> <span class="n">value</span><span class="o">.</span><span class="n">point</span><span class="o">.</span><span class="n">y</span> <span class="o">==</span> <span class="mi">20</span>
+</pre></div></div>
+
+<p>このシンプルスキーマは、渡された値がマップであるかを確認し、渡された値の各フィールドが、指定したシンプルスキーマのフィールドと合っているかどうか確認します。<br>
+正しければ、渡されたマップのキーを atom にした上で戻り値にします。</p>
+
+<p>また、<code>:value</code> フィールドに <code>optional: true</code> という制約を付与しました。<br>
+これはマップのフィールドに渡すシンプルスキーマのみに指定可能で「このフィールドが無くてもエラーにしない」という意味になります。<br>
+そのため <code>data</code> に <code>"value"</code> キーが存在していなくても <code>SimpleSchema.from_json!/2</code> が成功しています。</p>
+
+<h3>
+<span id="シンプルスキーマの一覧" class="fragment"></span><a href="#%E3%82%B7%E3%83%B3%E3%83%97%E3%83%AB%E3%82%B9%E3%82%AD%E3%83%BC%E3%83%9E%E3%81%AE%E4%B8%80%E8%A6%A7"><i class="fa fa-link"></i></a>シンプルスキーマの一覧</h3>
+
+<p>シンプルスキーマは、以下のいずれかである必要があります。</p>
+
+<ul>
+<li>
+<code>:boolean</code> または <code>{:boolean, opts}</code>
+</li>
+<li>
+<code>:integer</code> または <code>{:integer, opts}</code>
+</li>
+<li>
+<code>:number</code> または <code>{:number, opts}</code>
+</li>
+<li>
+<code>:null</code> または <code>{:null, opts}</code>
+</li>
+<li>
+<code>:string</code> または <code>{:string, opts}</code>
+</li>
+<li>
+<code>:any</code> または <code>{:any, opts}</code>
+</li>
+<li>
+<code>%{...}</code> または <code>{%{...}, opts}</code>
+</li>
+<li>
+<code>[...]</code> または <code>{[...], opts}</code>
+</li>
+<li>
+<code>SimpleSchema</code> ビヘイビアを実装したモジュール、または <code>{Module, opts}</code>
+</li>
+</ul>
+
+<p><code>opts</code> には各制約をキーワードリストで指定します。</p>
+
+<h3>
+<span id="制約の一覧" class="fragment"></span><a href="#%E5%88%B6%E7%B4%84%E3%81%AE%E4%B8%80%E8%A6%A7"><i class="fa fa-link"></i></a>制約の一覧</h3>
+
+<p>制約の一覧は以下の通りです。</p>
+
+<ul>
+<li>
+<code>{:nullable, boolean}</code>: もし <code>true</code> なら <code>nil</code> を許可する。<code>:null</code> 以外のシンプルスキーマに指定可能。</li>
+<li>
+<code>{:minimum, integer}</code>: 最小値。<code>:integer</code> と <code>:number</code> に指定可能。</li>
+<li>
+<code>{:maximum, integer}</code>: 最大値。<code>:integer</code> と <code>:number</code> に指定可能。</li>
+<li>
+<code>{:min_items, non_neg_integer}</code>: 最小の要素数。<code>:array</code> に指定可能。</li>
+<li>
+<code>{:max_items, non_neg_integer}</code>: 最大の要素数。<code>:array</code> に指定可能。</li>
+<li>
+<code>{:unique_items, boolean}</code>: もし <code>true</code> なら配列がユニークであることを要求される。<code>:array</code> に指定可能。</li>
+<li>
+<code>{:min_length, non_neg_integer}</code>: 最小の長さ。<code>:string</code> に指定可能。</li>
+<li>
+<code>{:max_length, non_neg_integer}</code>: 最大の長さ。<code>:string</code> に指定可能。</li>
+<li>
+<code>{:enum, [...]}</code>: 要素に指定可能な値のリスト。<code>:integer</code> と <code>:string</code> に指定可能。</li>
+<li>
+<code>{:format, :datetime | :email}</code>: 事前に定義されたフォーマットで検証する。<code>:string</code> に指定可能。</li>
+<li>
+<code>{:optional, boolean}</code>: もし <code>true</code> なら、<code>%{...}</code> の子要素として必須では無い。<code>%{...}</code> の子要素のみ指定可能。</li>
+<li>
+<code>{:field, string}</code>: 対応する JSON のフィールド名。<code>%{...}</code> の子要素のみ指定可能。</li>
+</ul>
+
+<h2>
+<span id="simpleschema-ビヘイビア" class="fragment"></span><a href="#simpleschema-%E3%83%93%E3%83%98%E3%82%A4%E3%83%93%E3%82%A2"><i class="fa fa-link"></i></a><code>SimpleSchema</code> ビヘイビア</h2>
+
+<p><code>SimpleSchema</code> ビヘイビアを実装したモジュールは、シンプルスキーマになります。<br>
+これを使うことで、特定のスキーマに名前を付けたり、特定の構造体に変換できるようになります。</p>
+
+<p>例えば、<code>"2017-11-27T11:49:50+09:00"</code> といった ISO 8601 に従った日付を <code>DateTime</code> 型として取得するには、以下のように定義します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">DateTimeSchema</span> <span class="k">do</span>
+  <span class="nv">@behaviour</span> <span class="no">SimpleSchema</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">schema</span><span class="p">(</span><span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:string</span><span class="p">,</span> <span class="ss">format:</span> <span class="ss">:datetime</span><span class="p">}</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">from_json</span><span class="p">(</span><span class="n">_schema</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="no">DateTime</span><span class="o">.</span><span class="n">from_iso8601</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">do</span>
+      <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">datetime</span><span class="p">}</span>
+      <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">reason</span><span class="p">}</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">to_json</span><span class="p">(</span><span class="n">_schema</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="no">DateTime</span><span class="o">.</span><span class="n">to_iso8601</span><span class="p">(</span><span class="n">value</span><span class="p">)}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>DateTimeSchema</code> は <code>SimpleSchema</code> ビヘイビアを実装しているためシンプルスキーマになります。<br>
+そのため、以下のように <code>SimpleSchema.from_json!/2</code> に渡すことができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">datetime</span> <span class="o">=</span> <span class="no">SimpleSchema</span><span class="o">.</span><span class="n">from_json!</span><span class="p">(</span><span class="no">DateTimeSchema</span><span class="p">,</span> <span class="s2">"2017-11-27T11:49:50+09:00"</span><span class="p">)</span>
+<span class="c1"># datetime == #DateTime&lt;2017-11-27 02:49:50Z&gt;</span>
+</pre></div></div>
+
+<p>このように <code>SimpleSchema</code> ビヘイビアを実装することで、特定のスキーマに <code>DateTimeSchema</code> というを付け、<code>DateTime</code> 型の構造体に変換して利用できるようになります。<br>
+なお、上記の <code>DateTimeSchema</code> に相当する機能は既に <code>SimpleSchema.Type.DateTime</code> に入っています。</p>
+
+<p><code>SimpleSchema</code> ビヘイビアが要求する関数は、以下の通りです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="nv">@callback</span> <span class="n">schema</span><span class="p">(</span><span class="n">opts</span> <span class="p">::</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="n">simple_schema</span>
+<span class="nv">@callback</span> <span class="n">from_json</span><span class="p">(</span><span class="n">schema</span> <span class="p">::</span> <span class="n">simple_schema</span><span class="p">,</span> <span class="n">json</span> <span class="p">::</span> <span class="n">any</span><span class="p">,</span> <span class="n">opts</span> <span class="p">::</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">any</span><span class="p">}</span> <span class="o">|</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">any</span><span class="p">}</span>
+<span class="nv">@callback</span> <span class="n">to_json</span><span class="p">(</span><span class="n">schema</span> <span class="p">::</span> <span class="n">simple_schema</span><span class="p">,</span> <span class="n">value</span> <span class="p">::</span> <span class="n">any</span><span class="p">,</span> <span class="n">opts</span> <span class="p">::</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">t</span><span class="p">)</span> <span class="p">::</span> <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">any</span><span class="p">}</span> <span class="o">|</span> <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">any</span><span class="p">}</span>
+</pre></div></div>
+
+<p><code>schema/1</code> で、そのモジュールが要求するシンプルスキーマを定義します。</p>
+
+<p><code>from_json/3</code> で、<code>value</code> を任意の型に変換して返します。<br>
+<code>value</code> は <code>schema/1</code> で返したシンプルスキーマによる検証が済んでいて、例えば上記の <code>DateTimeSchema.from_json/3</code> に渡された <code>value</code> は、<code>{:string, format: :datetime}</code> で検証されています。<br>
+そのため <code>value</code> が文字列であり、<code>:datetime</code> のフォーマットであることが保証されています。<sup id="fnref2"><a href="#fn2" rel="footnote" title="SimpleSchema.from_json/2 に optimistic: true が指定されていた場合、検証を行いません。この場合、正しい値を渡す責任はユーザにあります。">2</a></sup></p>
+
+<p><code>to_json/3</code> で、変換された値をシンプルスキーマの満たす文字列に変換します。<br>
+<code>from_json/3</code> と逆の変換を行います。<br>
+この関数は <code>SimpleSchema.to_json/2</code> の内部で利用される関数なので、不要であれば常に <code>{:error, "not implemented"}</code> でも構いません。</p>
+
+<h2>
+<span id="defschema1" class="fragment"></span><a href="#defschema1"><i class="fa fa-link"></i></a><code>defschema/1</code>
+</h2>
+
+<p><code>defschema/1</code> は、<code>defstruct/1</code> による構造体の定義と、<code>SimpleSchema</code> ビヘイビアの実装を行います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">SimpleSchema</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">defschema:</span> <span class="mi">1</span><span class="p">]</span>
+
+  <span class="n">defschema</span> <span class="p">[</span>
+    <span class="ss">name:</span> <span class="ss">:string</span><span class="p">,</span>
+    <span class="ss">age:</span> <span class="p">{</span><span class="ss">:integer</span><span class="p">,</span> <span class="ss">minimum:</span> <span class="mi">0</span><span class="p">},</span>
+  <span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>このコードは、以下の様に変換されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="nv">@enforce_keys</span> <span class="p">[</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:age</span><span class="p">]</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:age</span><span class="p">]</span>
+
+  <span class="nv">@behaviour</span> <span class="no">SimpleSchema</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">schema</span><span class="p">(</span><span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">%{</span>
+      <span class="ss">name:</span> <span class="ss">:string</span><span class="p">,</span>
+      <span class="ss">age:</span> <span class="p">{</span><span class="ss">:integer</span><span class="p">,</span> <span class="ss">minimum:</span> <span class="mi">0</span><span class="p">},</span>
+    <span class="p">}</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">from_json</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">SimpleSchema</span><span class="o">.</span><span class="no">Type</span><span class="o">.</span><span class="n">json_to_struct</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">schema</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">SimpleSchema</span>
+  <span class="k">def</span> <span class="n">to_json</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">SimpleSchema</span><span class="o">.</span><span class="no">Type</span><span class="o">.</span><span class="n">struct_to_json</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">schema</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>今ならこのコードの意味が分かるはずです。</p>
+
+<p><code>schema/1</code> で、<code>:name</code> と <code>:age</code> を持つマップとしてシンプルスキーマを定義しています。<br>
+渡された JSON のオブジェクトがこのシンプルスキーマの構造になっているかを検証した後、<code>Person.from_json/3</code> を呼び出して、<code>value</code> を <code>Person</code> 構造体に変換しています。<br>
+JSON のオブジェクトを特定の構造体に変換するためのヘルパーとして <code>SimpleSchema.Type.json_to_struct/3</code> があるので、これを使うと簡単に変換できます。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>JSON の検証と各データ構造への変換を行う SimpleSchema ライブラリについて説明しました。<br>
+シンプルスキーマは直感的に扱いやすいフォーマットになるようにしたので、難しく考えなくても利用できると思います。<br>
+また、<code>defstruct/1</code> を使ったり <code>SimpleSchema</code> ビヘイビアを実装することで、スキーマには適切に名前が付けられることになり、可読性や再利用性が上がります。<br>
+ぜひ使ってみて下さい。バグ報告や pull req お待ちしてます。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>お手伝い先の会社（株式会社gumi）の仕事として作ったので、gumi オーガナイゼーション下にあります。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><code>SimpleSchema.from_json/2</code> に <code>optimistic: true</code> が指定されていた場合、検証を行いません。この場合、正しい値を渡す責任はユーザにあります。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

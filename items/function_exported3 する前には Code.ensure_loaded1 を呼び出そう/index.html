@@ -1,0 +1,89 @@
+<p>何らかのビヘイビアを実装したモジュールからそれらの関数を呼び出す時、通常は <code>function_exported?/3</code> を呼び出してその関数が実装されているかどうかを確認します。</p>
+
+<p>例えば以下の様な <code>Foo</code> ビヘイビアを実装した <code>FooImpl</code> モジュールがある場合、</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="nv">@callback</span> <span class="n">foo</span><span class="p">()</span> <span class="p">::</span> <span class="ss">:ok</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">FooImpl</span> <span class="k">do</span>
+  <span class="nv">@behaviour</span> <span class="no">Foo</span>
+
+  <span class="nv">@impl</span> <span class="no">Foo</span>
+  <span class="k">def</span> <span class="n">foo</span><span class="p">()</span> <span class="k">do</span>
+    <span class="ss">:ok</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これを呼び出す際にはこのように書きます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Bar</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">call_foo</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">function_exported?</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">do</span>
+      <span class="k">raise</span> <span class="s2">"Foo behaviour is not implemented"</span>
+    <span class="k">end</span>
+    <span class="n">mod</span><span class="o">.</span><span class="n">foo</span><span class="p">()</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">call_foo</span><span class="p">(</span><span class="no">FooImpl</span><span class="p">)</span>
+</pre></div></div>
+
+<p>このように、通常は <code>function_exported?/3</code> で関数がエクスポートされているか、つまり <code>Foo</code> ビヘイビアが実装されているかを確認してから呼び出します。<br>
+これで全く問題のないコードに見えるかもしれません。</p>
+
+<p>しかしこのコードは、<code>mix</code> から起動した時に <strong>時々</strong> 動作しない、ということが起こります。</p>
+
+<h2>
+<span id="なぜ動作しないのか" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C%E5%8B%95%E4%BD%9C%E3%81%97%E3%81%AA%E3%81%84%E3%81%AE%E3%81%8B"><i class="fa fa-link"></i></a>なぜ動作しないのか</h2>
+
+<p><a href="https://hexdocs.pm/elixir/Kernel.html#function_exported?/3" rel="nofollow noopener" target="_blank"><code>function_exported?/3</code> のドキュメント</a> にも記載されていますが、<code>function_exported?/3</code> 関数は、その関数が実装されていない場合だけでなく、そのモジュールがそもそもロードされていないという場合にも <code>false</code> を返します。<br>
+あるモジュールを利用するには、事前にそのモジュールを Erlang VM にロードしておく必要があるのですが、状況によってロードされていないことがあるのです。</p>
+
+<p>それを理解するにはモジュールのロード戦略を知る必要があります。<br>
+モジュールをロードする戦略は、<strong>組み込みモード</strong> と <strong>対話モード</strong> の２種類があります。</p>
+
+<p>組み込みモードでは、アプリケーション起動時に全てのモジュールがロードされます。<br>
+対話モードでは、最初にそのモジュールの関数を呼び出す時に、そのモジュールがロードされます。</p>
+
+<p>そして、<code>mix</code> からアプリケーションを動かした場合には <strong>対話モード</strong> で動作します。</p>
+
+<p>そのため、<code>mix</code> から上記のコードを動かした時、<code>FooImpl</code> のモジュールにある関数を誰も事前に呼んでいない場合 <code>function_exported?/3</code> は <code>false</code> を返し、エラーになります。<br>
+<code>FooImpl</code> モジュールの関数を誰かが事前に呼んでいた場合、<code>function_exported?/3</code> は <code>true</code> を返し、正しく <code>mod.foo()</code> が呼ばれます。</p>
+
+<p>つまり、<code>mix</code> から起動した場合、事前にどのコードを通っていたかによって動作が変わります。<br>
+これが「時々動作しない」と言った理由です。</p>
+
+<p>なお、<a href="https://hex.pm/packages/distillery" rel="nofollow noopener" target="_blank">Distillery</a> で生成した場合、デフォルトで <a href="https://github.com/bitwalker/distillery/blob/7790d50913b766ffdbbb5ab46e44c9f615d6c249/priv/libexec/env.sh#L16" rel="nofollow noopener" target="_blank">組み込みモード</a> になります。</p>
+
+<h2>
+<span id="対応策" class="fragment"></span><a href="#%E5%AF%BE%E5%BF%9C%E7%AD%96"><i class="fa fa-link"></i></a>対応策</h2>
+
+<p><code>function_exported?/3</code> のドキュメントにも書いてある通り、<a href="https://hexdocs.pm/elixir/Code.html#ensure_loaded/1" rel="nofollow noopener" target="_blank"><code>Code.ensure_loaded/1</code></a> を使ってロードしておくのがいいでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Bar</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">call_foo</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Code</span><span class="o">.</span><span class="n">ensure_loaded</span><span class="p">(</span><span class="n">mod</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">function_exported?</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="ss">:foo</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">do</span>
+      <span class="k">raise</span> <span class="s2">"Foo behaviour is not implemented"</span>
+    <span class="k">end</span>
+    <span class="n">mod</span><span class="o">.</span><span class="n">foo</span><span class="p">()</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="n">call_foo</span><span class="p">(</span><span class="no">FooImpl</span><span class="p">)</span>
+</pre></div></div>
+
+<p>これで無事モジュールがロードされるので、時々ロードされてないという状況を防げます。</p>
+
+<p>もっと厳密にやるなら、<code>Code.ensure_loaded/1</code> の戻り値をチェックして、エラーだった場合の分岐を書いた方がいいでしょう。<br>
+ただ、そこでエラーだったら次の <code>function_exported?/3</code> が <code>false</code> を返して <code>Foo</code> ビヘイビアを実装していないというエラーになるだけなので、まあいいか、と妥協しています。</p>
+
+<h2>
+<span id="参考" class="fragment"></span><a href="#%E5%8F%82%E8%80%83"><i class="fa fa-link"></i></a>参考</h2>
+
+<ul>
+<li><a href="http://erlang.org/doc/reference_manual/code_loading.html" rel="nofollow noopener" target="_blank">Erlang -- Compilation and Code Loading</a></li>
+<li><a href="http://erlang.org/doc/system_principles/system_principles.html#code_loading" rel="nofollow noopener" target="_blank">Erlang -- System Principles | 1.4  Code Loading Strategy</a></li>
+</ul>

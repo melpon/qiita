@@ -1,0 +1,190 @@
+<p>Elixirで例外が発生した時、あるいは発生していなくてもスタックトレースの情報が欲しいことがあったので調べました。</p>
+
+<h1>
+<span id="例外時" class="fragment"></span><a href="#%E4%BE%8B%E5%A4%96%E6%99%82"><i class="fa fa-link"></i></a>例外時</h1>
+
+<p>例外が起きた時は当然、詳細なログを出すために欲しくなります。</p>
+
+<p>例外時にスタックトレースの情報を取得するには <code>System.stacktrace/0</code> を使用します。<sup id="fnref1"><a href="#fn1" rel="footnote" title="f() + 1 のように + 1 している理由は、末尾呼び出し最適化を妨害するためです。詳しくは Elixirのスタックトレースと末尾呼び出し最適化 へ。">1</a></sup><sup id="fnref2"><a href="#fn2" rel="footnote" title="Elixir 1.7 からは System.stacktrace/0 は deprecated になりました。代わりに __STACKTRACE__ を使ってください。">2</a></sup></p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="k">throw</span> <span class="mi">42</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">g</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">f</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">h</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">g</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">try</span> <span class="k">do</span>
+  <span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
+<span class="k">catch</span>
+  <span class="mi">42</span> <span class="o">-&gt;</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">()</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">[{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:f</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">3</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:g</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">6</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:h</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">9</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_compiler_0</span><span class="p">,</span> <span class="ss">:__FILE__</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">14</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_compiler</span><span class="p">,</span> <span class="ss">:dispatch_loaded</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span>
+  <span class="p">[</span><span class="ss">file:</span> <span class="s1">'src/elixir_compiler.erl'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">125</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_lexical</span><span class="p">,</span> <span class="ss">:run</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'src/elixir_lexical.erl'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">17</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_compiler</span><span class="p">,</span> <span class="ss">:quoted</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'src/elixir_compiler.erl'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">30</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">Code</span><span class="p">,</span> <span class="ss">:require_file</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'lib/code.ex'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">370</span><span class="p">]}]</span>
+</pre></div></div>
+
+<p>いい感じに整形した形で取得したいなら <code>Exception.format_stacktrace/1</code> を使います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">try</span> <span class="k">do</span>
+  <span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
+<span class="k">catch</span>
+  <span class="mi">42</span> <span class="o">-&gt;</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">(</span><span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">())</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>    prog.exs:3: X.f/0
+    prog.exs:6: X.g/0
+    prog.exs:9: X.h/0
+    prog.exs:14: (file)
+    (elixir) src/elixir_compiler.erl:125: :elixir_compiler.dispatch_loaded/6
+    (elixir) src/elixir_lexical.erl:17: :elixir_lexical.run/3
+    (elixir) src/elixir_compiler.erl:30: :elixir_compiler.quoted/3
+    (elixir) lib/code.ex:370: Code.require_file/2
+</pre></div></div>
+
+<h1>
+<span id="通常時" class="fragment"></span><a href="#%E9%80%9A%E5%B8%B8%E6%99%82"><i class="fa fa-link"></i></a>通常時</h1>
+
+<p>例外が発生していない場合でも、その関数がどこから呼ばれたか知りたいことがあります。<br>
+例えば共通処理の関数内で <code>Logger.info</code> を使ってログを出力する時、スタックトレースの情報があれば、どこに問題があるのかすぐに分かります。</p>
+
+<p>通常時にスタックトレースの情報を取得するには <code>Process.info(self(), :current_stacktrace)</code> を使用します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:current_stacktrace</span><span class="p">,</span> <span class="n">t</span><span class="p">}</span> <span class="o">=</span> <span class="no">Process</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">self</span><span class="p">(),</span> <span class="ss">:current_stacktrace</span><span class="p">)</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="n">t</span>
+    <span class="mi">0</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">g</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">f</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">h</span><span class="p">()</span> <span class="k">do</span>
+    <span class="n">g</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="p">[{</span><span class="no">Process</span><span class="p">,</span> <span class="ss">:info</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'lib/process.ex'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">521</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:f</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">3</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:g</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">8</span><span class="p">]},</span>
+ <span class="p">{</span><span class="no">X</span><span class="p">,</span> <span class="ss">:h</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">11</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_compiler_0</span><span class="p">,</span> <span class="ss">:__FILE__</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'prog.exs'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">15</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_compiler</span><span class="p">,</span> <span class="ss">:dispatch_loaded</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span>
+  <span class="p">[</span><span class="ss">file:</span> <span class="s1">'src/elixir_compiler.erl'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">125</span><span class="p">]},</span>
+ <span class="p">{</span><span class="ss">:elixir_lexical</span><span class="p">,</span> <span class="ss">:run</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="p">[</span><span class="ss">file:</span> <span class="s1">'src/elixir_lexical.erl'</span><span class="p">,</span> <span class="ss">line:</span> <span class="mi">17</span><span class="p">]}]</span>
+</pre></div></div>
+
+<p>いい感じに整形した形で取得したいなら、例外と同様にこれを <code>Exception.format_stacktrace/1</code> に渡すだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="o">...</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:current_stacktrace</span><span class="p">,</span> <span class="n">t</span><span class="p">}</span> <span class="o">=</span> <span class="no">Process</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">self</span><span class="p">(),</span> <span class="ss">:current_stacktrace</span><span class="p">)</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">(</span><span class="no">Enum</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="mi">0</span>
+  <span class="k">end</span>
+<span class="o">...</span>
+<span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>    prog.exs:3: X.f/0
+    prog.exs:8: X.g/0
+    prog.exs:11: X.h/0
+    prog.exs:15: (file)
+    (elixir) src/elixir_compiler.erl:125: :elixir_compiler.dispatch_loaded/6
+    (elixir) src/elixir_lexical.erl:17: :elixir_lexical.run/3
+</pre></div></div>
+
+<p><code>Process.info/1</code> もスタックトレースに含まれていて邪魔なので、<code>Enum.drop(t, 1)</code> で除けています。</p>
+
+<p>なお <a href="https://hexdocs.pm/elixir/Exception.html#format_stacktrace/1" rel="nofollow noopener" target="_blank"><code>Exception.format_stacktrace/1</code> のドキュメント</a> を読むと、「引数が無いバージョンを使うと <code>Process.info/2</code> で現在のスタックトレース情報を取得して返してくれる」とありますが、普通に書くと、呼び出し元の関数の情報が落ちてしまいます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="o">...</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">()</span>
+    <span class="mi">0</span>
+  <span class="k">end</span>
+<span class="o">...</span>
+<span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>    prog.exs:7: X.g/0
+    prog.exs:10: X.h/0
+    prog.exs:14: (file)
+    (elixir) src/elixir_compiler.erl:125: :elixir_compiler.dispatch_loaded/6
+</pre></div></div>
+
+<p><code>X.f/0</code> の情報がありません。</p>
+
+<p><a href="https://github.com/elixir-lang/elixir/blob/v1.4.2/lib/elixir/lib/exception.ex#L388" rel="nofollow noopener" target="_blank">コードを見てみる</a> と、<code>Enum.drop(t, 3)</code> で、3個のトレース情報を消していることが分かります。<br>
+1個は <code>Process.info/2</code> で、1個は <code>Exception.format_stacktrace/1</code> を除けているのは分かりますが、なぜか更にもう1個、つまり <code>X.f/0</code> の情報も消していることになります。</p>
+
+<p>すごい微妙なので、これはもう1個無駄にスタック情報を積んでから呼び出すのが良いと思います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">format_stacktrace</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">()</span> <span class="o">&lt;&gt;</span> <span class="s2">""</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="n">format_stacktrace</span><span class="p">()</span>
+    <span class="mi">0</span>
+  <span class="k">end</span>
+  <span class="o">...</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>    prog.exs:6: X.f/0
+    prog.exs:10: X.g/0
+    prog.exs:13: X.h/0
+    prog.exs:17: (file)
+</pre></div></div>
+
+<p>ただ、スタックトレースの情報は7個までしか取得していないようで、ただでさえ少ないスタックトレースの情報が3個も削られてかなり勿体無いと感じます。<br>
+どのように取得するのかはちょっと考えた方が良さそうです。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p><code>f() + 1</code> のように <code>+ 1</code> している理由は、末尾呼び出し最適化を妨害するためです。詳しくは <a href="http://qiita.com/melpon/items/0eedc19d6aece782d13d" id="reference-0ed14218c7f9c270a86b">Elixirのスタックトレースと末尾呼び出し最適化</a> へ。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>Elixir 1.7 からは <code>System.stacktrace/0</code> は deprecated になりました。代わりに <code>__STACKTRACE__</code> を使ってください。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

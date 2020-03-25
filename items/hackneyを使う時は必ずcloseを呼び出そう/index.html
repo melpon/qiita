@@ -1,0 +1,126 @@
+<p><a href="https://github.com/benoitc/hackney" rel="nofollow noopener" target="_blank">hackney</a> は簡単に扱える HTTP クライアントですが、ちょっとした注意点があります。</p>
+
+<h2>
+<span id="実験" class="fragment"></span><a href="#%E5%AE%9F%E9%A8%93"><i class="fa fa-link"></i></a>実験</h2>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="mi">1</span><span class="o">&gt;</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="s">"http://google.co.jp/"</span><span class="p">).</span>
+<span class="p">{</span><span class="n">ok</span><span class="p">,</span><span class="mi">301</span><span class="p">,</span>
+    <span class="p">[{</span><span class="o">&lt;&lt;</span><span class="s">"Location"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"http://www.google.co.jp/"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Content-Type"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"text/html; charset=UTF-8"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Date"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"Tue, 13 Dec 2016 10:07:57 GMT"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Expires"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"Thu, 12 Jan 2017 10:07:57 GMT"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Cache-Control"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"public, max-age=2592000"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Server"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"gws"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"Content-Length"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"221"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"X-XSS-Protection"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"1; mode=block"</span><span class="o">&gt;&gt;</span><span class="p">},</span>
+     <span class="p">{</span><span class="o">&lt;&lt;</span><span class="s">"X-Frame-Options"</span><span class="o">&gt;&gt;</span><span class="p">,</span><span class="o">&lt;&lt;</span><span class="s">"SAMEORIGIN"</span><span class="o">&gt;&gt;</span><span class="p">}],</span>
+    <span class="err">#</span><span class="nv">Ref</span><span class="o">&lt;</span><span class="mi">0</span><span class="p">.</span><span class="mi">0</span><span class="p">.</span><span class="mi">4</span><span class="p">.</span><span class="mi">825</span><span class="o">&gt;</span><span class="p">}</span>
+<span class="mi">2</span><span class="o">&gt;</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="s">"http://google.co.jp/"</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="mi">3</span><span class="o">&gt;</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="s">"http://google.co.jp/"</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="mi">4</span><span class="o">&gt;</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="s">"http://google.co.jp/"</span><span class="p">).</span>
+<span class="p">...</span>
+<span class="c">%% 以下大量に投げる（やり過ぎ注意）
+</span></pre></div></div>
+
+<p>この状態で別のコンソールを開き、以下のコマンドを入れます。</p>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre><span class="nv">$ </span>netstat <span class="nt">-anv</span> | <span class="nb">grep </span>ESTABLISHED | <span class="nb">grep</span> <span class="s1">'\.80'</span>
+tcp4       0      0  192.168.14.244.52548   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52547   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52546   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52545   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52544   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52543   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52542   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52541   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52540   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52539   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52538   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52537   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52536   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52535   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52534   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52533   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52532   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+tcp4       0      0  192.168.14.244.52521   216.58.220.227.80      ESTABLISHED 131330 131874   5759      0
+</pre></div></div>
+
+<p>大量にソケットが開きっぱなしになっています。<br>
+これを放置しておくとリソースリークになるし、サーバの負担にもなるので何とかする必要があります。</p>
+
+<h2>
+<span id="原因" class="fragment"></span><a href="#%E5%8E%9F%E5%9B%A0"><i class="fa fa-link"></i></a>原因</h2>
+
+<p><code>hackney:request/{1-5}</code>は、レスポンスボディをまだ読んでいない状態で返されます。<br>
+そのため、hackneyのソケットは開きっぱなしの状態になります。</p>
+
+<p><code>hackney:request/{1-5}</code>は、<code>{ok, StatusCode, RespHeader, ClientRef}</code> という４タプルを返します。<br>
+この <code>ClientRef</code> を使って <code>hackney:body(ClientRef)</code> することで初めてレスポンスボディが読まれます。</p>
+
+<p>もし<code>hackney:body(ClientRef)</code>で全てのデータが読み込めたら、ソケットを閉じます。<sup id="fnref1"><a href="#fn1" rel="footnote" title="Keep-Aliveが設定されてる場合はcloseされないっぽいけど、これがどこで切られてるのかよく分からなかったので割愛">1</a></sup></p>
+
+<p>また、hackneyでは、<code>hackney:request/{1-5}</code>を呼び出したプロセス上でソケットを開きます。<br>
+そのため、呼び出したプロセスが落ちない限りは、ソケットが勝手に閉じたりはしません。</p>
+
+<h2>
+<span id="対策" class="fragment"></span><a href="#%E5%AF%BE%E7%AD%96"><i class="fa fa-link"></i></a>対策</h2>
+
+<p>つまり、以下のどれかを行う必要があります。</p>
+
+<ul>
+<li>
+<code>hackney:request/{1-5}</code>の後、全てのデータを<code>hackney:body/1</code>で読み込む</li>
+<li>
+<code>hackney:request/{1-5}</code>の後、必ず<code>hackney:close/1</code>を呼び出す</li>
+<li>
+<code>hackney:request/{1-5}</code>の後、プロセスを落とす</li>
+</ul>
+
+<p><code>hackney:close/1</code>を呼ぶのが普通の対応でしょう。<br>
+以下のようになります。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="k">case</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="nv">Url</span><span class="p">)</span> <span class="k">of</span>
+    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">StatusCode</span><span class="p">,</span> <span class="nv">Headers</span><span class="p">,</span> <span class="nv">ClientRef</span><span class="p">}</span> <span class="o">-&gt;</span>
+        <span class="k">try</span>
+            <span class="k">case</span> <span class="nv">StatusCode</span> <span class="ow">div</span> <span class="mi">100</span> <span class="k">of</span>
+                <span class="c">%% 200系の処理
+</span>                <span class="mi">2</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Body</span><span class="p">}</span> <span class="o">=</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">body</span><span class="p">(</span><span class="nv">ClientRef</span><span class="p">),</span>
+                     <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Body</span><span class="p">};</span>
+                <span class="c">%% それ以外の処理
+</span>                <span class="p">_</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="p">{</span><span class="n">bad_status_code</span><span class="p">,</span> <span class="nv">StatusCode</span><span class="p">}}</span>
+            <span class="k">end</span>
+        <span class="k">after</span>
+            <span class="nn">hackney</span><span class="p">:</span><span class="nf">close</span><span class="p">(</span><span class="nv">ClientRef</span><span class="p">)</span>
+        <span class="k">end</span><span class="p">;</span>
+    <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="n">error</span><span class="p">,</span> <span class="nv">Reason</span><span class="p">}</span>
+<span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>よくあるコードでは、以下のように書いていたりしますが、これは間違いです。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% リークする可能性のあるコード
+</span><span class="k">case</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">request</span><span class="p">(</span><span class="nb">get</span><span class="p">,</span> <span class="s">"..."</span><span class="p">)</span> <span class="k">of</span>
+    <span class="c">%% 200 OK以外は興味が無いのでパターンマッチでクラッシュさせる
+</span>    <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="nv">Headers</span><span class="p">,</span> <span class="nv">ClientRef</span><span class="p">}</span> <span class="o">-&gt;</span>
+        <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Body</span><span class="p">}</span> <span class="o">=</span> <span class="nn">hackney</span><span class="p">:</span><span class="nf">body</span><span class="p">(</span><span class="nv">ClientRef</span><span class="p">),</span>
+        <span class="nn">hackney</span><span class="p">:</span><span class="nf">close</span><span class="p">(</span><span class="nv">ClientRef</span><span class="p">),</span>
+        <span class="p">{</span><span class="n">ok</span><span class="p">,</span> <span class="nv">Body</span><span class="p">};</span>
+<span class="k">end</span><span class="p">.</span>
+</pre></div></div>
+
+<p>もしこのパターンマッチのエラーを誰かが拾っていた場合、200以外のレスポンスが返ってきた際にソケットが開きっぱなしになります。</p>
+
+<p>hackneyを使う際には<code>hackney:close/1</code>を呼ぶコードが入っているか確認するようにしましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>Keep-Aliveが設定されてる場合はcloseされないっぽいけど、これがどこで切られてるのかよく分からなかったので割愛 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

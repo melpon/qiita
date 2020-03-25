@@ -1,0 +1,172 @@
+
+<h2>
+<span id="末尾呼び出し最適化" class="fragment"></span><a href="#%E6%9C%AB%E5%B0%BE%E5%91%BC%E3%81%B3%E5%87%BA%E3%81%97%E6%9C%80%E9%81%A9%E5%8C%96"><i class="fa fa-link"></i></a>末尾呼び出し最適化</h2>
+
+<p>Elixir（というか ErlangVM）は末尾呼び出し最適化を行います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"success!"</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">if</span> <span class="n">rem</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1000000</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">do</span>
+      <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="n">n</span>
+    <span class="k">end</span>
+    <span class="n">f</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10000000</span><span class="p">)</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>10000000
+9000000
+8000000
+7000000
+6000000
+5000000
+4000000
+3000000
+2000000
+1000000
+success!
+</pre></div></div>
+
+<p><code>X.f/1</code> は1000万回、再帰的な呼び出しをしています。<br>
+普通に考えれば、スタックが溢れそうなものですが、Elixirでは問題なく動きます。</p>
+
+<p>これは Elixir の <strong>末尾呼び出し最適化</strong> によるものです。<br>
+末尾呼び出し最適化は、関数の末尾で次の関数を呼んだ場合、コンテキストをスタックに積まずにその関数を呼び出すという最適化です。<br>
+これによって Elixir はスタックを溢れさせずに再帰的な呼び出しができるようになっています。</p>
+
+<p>末尾でない場合は最適化が効かないので、以下の様にするとメモリ不足でクラッシュします。<sup id="fnref1"><a href="#fn1" rel="footnote" title="環境によって何回のループでクラッシュするかは変わります">1</a></sup></p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"success!"</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">f</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="c1"># fの呼び出しの後に書くことで末尾呼び出し最適化を妨害する</span>
+    <span class="k">if</span> <span class="n">rem</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1000000</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">do</span>
+      <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="n">n</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10000000</span><span class="p">)</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>eheap_alloc: Cannot allocate 212907632 bytes of memory (of type "heap").
+
+Crash dump is being written to: erl_crash.dump...done
+</pre></div></div>
+
+<h2>
+<span id="スタックトレース" class="fragment"></span><a href="#%E3%82%B9%E3%82%BF%E3%83%83%E3%82%AF%E3%83%88%E3%83%AC%E3%83%BC%E3%82%B9"><i class="fa fa-link"></i></a>スタックトレース</h2>
+
+<p>末尾呼び出し最適化は良い機能ですが、スタックトレースとの相性は悪いと言えます。<br>
+例えば以下のコードでスタックトレースを取ってみます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"f()"</span>
+    <span class="k">throw</span> <span class="mi">42</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">g</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"g()"</span>
+    <span class="n">f</span><span class="p">()</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">h</span><span class="p">()</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"h()"</span>
+    <span class="n">g</span><span class="p">()</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">try</span> <span class="k">do</span>
+  <span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
+<span class="k">catch</span>
+  <span class="mi">42</span> <span class="o">-&gt;</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">(</span><span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">())</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>h()
+g()
+f()
+    prog.exs:4: X.f/0
+    prog.exs:17: (file)
+    (elixir) src/elixir_compiler.erl:125: :elixir_compiler.dispatch_loaded/6
+    (elixir) src/elixir_lexical.erl:17: :elixir_lexical.run/3
+    (elixir) src/elixir_compiler.erl:30: :elixir_compiler.quoted/3
+    (elixir) lib/code.ex:370: Code.require_file/2
+    (elixir) lib/kernel/cli.ex:437: Kernel.CLI.wrapper/1
+    (elixir) lib/enum.ex:1229: Enum."-map/2-lists^map/1-0-"/2
+</pre></div></div>
+
+<p>スタックトレースの情報から <code>X.h/0</code> や <code>X.g/0</code> の情報が消えていることが分かります。<br>
+これが末尾呼び出し最適化による影響です。</p>
+
+<p>末尾呼び出し最適化は、スタックにコンテキストを積みません。<br>
+つまり呼び出し元の関数の情報を保存せず、次の関数を実行します。<br>
+そのためスタックトレースには情報が残らないのです。</p>
+
+<p>コンパイルオプションやデバッグオプションで末尾呼び出し最適化をしない（<code>call_only</code>命令を使わない）みたいなのがあるか調べたのですが、特に無さそうです。<br>
+なのでスタックトレースに情報を残したいなら、末尾呼び出し最適化を何とかして妨害する必要があります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">()</span> <span class="k">do</span>
+    <span class="k">throw</span> <span class="mi">42</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">g</span><span class="p">()</span> <span class="k">do</span>
+    <span class="c1"># + 1 することで末尾呼び出し最適化を妨害する</span>
+    <span class="n">f</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">h</span><span class="p">()</span> <span class="k">do</span>
+    <span class="c1"># + 1 することで末尾呼び出し最適化を妨害する</span>
+    <span class="n">g</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">try</span> <span class="k">do</span>
+  <span class="no">X</span><span class="o">.</span><span class="n">h</span><span class="p">()</span>
+<span class="k">catch</span>
+  <span class="mi">42</span> <span class="o">-&gt;</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="no">Exception</span><span class="o">.</span><span class="n">format_stacktrace</span><span class="p">(</span><span class="no">System</span><span class="o">.</span><span class="n">stacktrace</span><span class="p">())</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>    prog.exs:3: X.f/0
+    prog.exs:6: X.g/0
+    prog.exs:9: X.h/0
+    prog.exs:14: (file)
+    (elixir) src/elixir_compiler.erl:125: :elixir_compiler.dispatch_loaded/6
+    (elixir) src/elixir_lexical.erl:17: :elixir_lexical.run/3
+    (elixir) src/elixir_compiler.erl:30: :elixir_compiler.quoted/3
+    (elixir) lib/code.ex:370: Code.require_file/2
+</pre></div></div>
+
+<p>これで無事 <code>X.g/0</code> や <code>X.h/0</code> の情報がスタックトレースに表示されるようになりました。</p>
+
+<p>ただ、末尾呼び出し最適化を妨害するためだけに謎のコードを埋め込むのは良くないので、「スタックトレースの情報を見た時に、本来呼ばれてるべき関数が無かったら末尾呼び出し最適化が起きたと考えて、焦らずにどの関数から呼ばれたかを予測する」ぐらいでいいのかもしれません。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>環境によって何回のループでクラッシュするかは変わります <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,187 @@
+
+<h2>
+<span id="構造体とマップの違い" class="fragment"></span><a href="#%E6%A7%8B%E9%80%A0%E4%BD%93%E3%81%A8%E3%83%9E%E3%83%83%E3%83%97%E3%81%AE%E9%81%95%E3%81%84"><i class="fa fa-link"></i></a>構造体とマップの違い</h2>
+
+<p>Elixir で「構造体とマップの違いは？」と聞かれたら、まず最初に出てくるのが <code>__struct__</code> の有無でしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:age</span><span class="p">]</span>
+<span class="k">end</span>
+
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span> <span class="o">=</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">name:</span> <span class="s2">"John"</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">}</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">keys</span><span class="p">(</span><span class="n">person</span><span class="p">)</span>
+<span class="p">[</span><span class="ss">:__struct__</span><span class="p">,</span> <span class="ss">:age</span><span class="p">,</span> <span class="ss">:name</span><span class="p">]</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span><span class="o">.</span><span class="n">__struct__</span>
+<span class="no">Person</span>
+</pre></div></div>
+
+<p>ただ、構造体とマップの違いは他にもあります。<br>
+それは、<strong>マップは <a href="https://hexdocs.pm/elixir/Enumerable.html" rel="nofollow noopener" target="_blank"><code>Enumerable</code></a> プロトコルと <a href="https://hexdocs.pm/elixir/Access.html" rel="nofollow noopener" target="_blank"><code>Access</code></a> ビヘイビアを実装しているが、構造体は実装していない</strong>という点です。<sup id="fnref1"><a href="#fn1" rel="footnote" title="他には Collectable プロトコルも実装していないのですが、それは省略">1</a></sup></p>
+
+<p>そのため、これらの振る舞いに依存した関数は、構造体では動作しません。<br>
+例を上げていきます。</p>
+
+<h3>
+<span id="for--do" class="fragment"></span><a href="#for--do"><i class="fa fa-link"></i></a><code>for ... do</code>
+</h3>
+
+<p>構造体は <code>for</code> で列挙できません。これは <code>Enumerable</code> プロトコルを実装していないからです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span> <span class="o">=</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">name:</span> <span class="s2">"John"</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">}</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">for</span> <span class="n">_</span> <span class="o">&lt;-</span> <span class="n">person</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="no">nil</span>
+<span class="o">**</span> <span class="p">(</span><span class="no">Protocol</span><span class="o">.</span><span class="no">UndefinedError</span><span class="p">)</span> <span class="n">protocol</span> <span class="no">Enumerable</span> <span class="ow">not</span> <span class="n">implemented</span> <span class="n">for</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"John"</span><span class="p">}</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">enum</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">1</span><span class="p">:</span> <span class="no">Enumerable</span><span class="o">.</span><span class="n">impl_for!</span><span class="o">/</span><span class="mi">1</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">enum</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">116</span><span class="p">:</span> <span class="no">Enumerable</span><span class="o">.</span><span class="n">reduce</span><span class="o">/</span><span class="mi">3</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">enum</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">1823</span><span class="p">:</span> <span class="no">Enum</span><span class="o">.</span><span class="n">reduce</span><span class="o">/</span><span class="mi">3</span>
+</pre></div></div>
+
+<p>構造体のキーや値を全部列挙したい場合なんかにやってしまうことがあります。</p>
+
+<h3>
+<span id="personname" class="fragment"></span><a href="#personname"><i class="fa fa-link"></i></a><code>person[:name]</code>
+</h3>
+
+<p><code>person[:name]</code> でアクセスすることは出来ません。これは <code>Access</code> ビヘイビアを実装していないからです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span> <span class="o">=</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">name:</span> <span class="s2">"John"</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">}</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span><span class="p">[</span><span class="ss">:name</span><span class="p">]</span>
+<span class="o">**</span> <span class="p">(</span><span class="no">UndefinedFunctionError</span><span class="p">)</span> <span class="n">function</span> <span class="no">Person</span><span class="o">.</span><span class="n">fetch</span><span class="o">/</span><span class="mi">2</span> <span class="n">is</span> <span class="n">undefined</span> <span class="p">(</span><span class="no">Person</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">implement</span> <span class="n">the</span> <span class="no">Access</span> <span class="n">behaviour</span><span class="p">)</span>
+    <span class="no">Person</span><span class="o">.</span><span class="n">fetch</span><span class="p">(%</span><span class="no">Person</span><span class="p">{</span><span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"John"</span><span class="p">},</span> <span class="ss">:name</span><span class="p">)</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">access</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">304</span><span class="p">:</span> <span class="no">Access</span><span class="o">.</span><span class="n">get</span><span class="o">/</span><span class="mi">3</span>
+</pre></div></div>
+
+<p>見ての通り、<code>person[:name]</code> という操作は <code>Access</code> ビヘイビアの <code>fetch/2</code> を要求するので、構造体では動作しません。<br>
+指定した atom の値を取得する処理を書いた場合なんかにやってしまうことがあります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">get_value</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">data</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<h3>
+<span id="put_in3-update_in3" class="fragment"></span><a href="#put_in3-update_in3"><i class="fa fa-link"></i></a><code>put_in/3</code>, <code>update_in/3</code>
+</h3>
+
+<p><a href="https://hexdocs.pm/elixir/Kernel.html#put_in/3" rel="nofollow noopener" target="_blank"><code>put_in/3</code></a> や <a href="https://hexdocs.pm/elixir/Kernel.html#update_in/3" rel="nofollow noopener" target="_blank"><code>update_in/3</code></a> も <code>Access</code> ビヘイビアを利用しているので、動作しません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span> <span class="o">=</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">name:</span> <span class="s2">"John"</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">}</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">put_in</span><span class="p">(</span><span class="n">person</span><span class="p">,</span> <span class="p">[</span><span class="ss">:name</span><span class="p">],</span> <span class="s2">"Smith"</span><span class="p">)</span>
+<span class="o">**</span> <span class="p">(</span><span class="no">UndefinedFunctionError</span><span class="p">)</span> <span class="n">function</span> <span class="no">Person</span><span class="o">.</span><span class="n">get_and_update</span><span class="o">/</span><span class="mi">3</span> <span class="n">is</span> <span class="n">undefined</span> <span class="p">(</span><span class="no">Person</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">implement</span> <span class="n">the</span> <span class="no">Access</span> <span class="n">behaviour</span><span class="p">)</span>
+    <span class="no">Person</span><span class="o">.</span><span class="n">get_and_update</span><span class="p">(%</span><span class="no">Person</span><span class="p">{</span><span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"John"</span><span class="p">},</span> <span class="ss">:name</span><span class="p">,</span> <span class="c1">#Function&lt;12.67985749/1 in Kernel.put_in/3&gt;)</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">access</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">356</span><span class="p">:</span> <span class="no">Access</span><span class="o">.</span><span class="n">get_and_update</span><span class="o">/</span><span class="mi">3</span>
+    <span class="p">(</span><span class="n">elixir</span><span class="p">)</span> <span class="n">lib</span><span class="o">/</span><span class="n">kernel</span><span class="o">.</span><span class="ss">ex:</span><span class="mi">1880</span><span class="p">:</span> <span class="no">Kernel</span><span class="o">.</span><span class="n">put_in</span><span class="o">/</span><span class="mi">3</span>
+</pre></div></div>
+
+<p>ただし <a href="https://hexdocs.pm/elixir/Kernel.html#put_in/2" rel="nofollow noopener" target="_blank"><code>put_in/2</code></a> （マクロ実装の方）を使って構造体を <code>.</code> でアクセスすれば動作します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">put_in</span><span class="p">(</span><span class="n">person</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s2">"Smith"</span><span class="p">)</span>
+<span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"Smith"</span><span class="p">}</span>
+</pre></div></div>
+
+<p><code>Access</code> ビヘイビアを実装せずに構造体に対して put_in したいなら <code>put_in/2</code> を使うしかありません。<sup id="fnref2"><a href="#fn2" rel="footnote" title='なおこのケースなら %{person | name: "Smith"} とした方が素直で良いです。put_in/2 が生きるのは person.birthday.year みたいなネストしたデータを扱う場合です。'>2</a></sup></p>
+
+<p>マクロの利用を嫌って <code>put_in/3</code> を使おうとした時にやらかしました。以降は素直に <code>put_in/2</code>, <code>update_in/2</code> を使っています。</p>
+
+<h2>
+<span id="構造体をマップに近づける" class="fragment"></span><a href="#%E6%A7%8B%E9%80%A0%E4%BD%93%E3%82%92%E3%83%9E%E3%83%83%E3%83%97%E3%81%AB%E8%BF%91%E3%81%A5%E3%81%91%E3%82%8B"><i class="fa fa-link"></i></a>構造体をマップに近づける</h2>
+
+<p>どれも <code>Map.from_struct/1</code> を使って変換すれば動作するのですが、どうせなので構造体をマップに近づけることでどれも動作するようにしてみましょう。</p>
+
+<p>まず <code>Enumerable</code> プロトコルに対応します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defimpl</span> <span class="no">Enumerable</span><span class="p">,</span> <span class="ss">for:</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="k">defp</span> <span class="n">to_list</span><span class="p">(</span><span class="n">enumerable</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">list</span> <span class="o">=</span>
+      <span class="n">enumerable</span>
+      <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">()</span>
+      <span class="o">|&gt;</span> <span class="no">Map</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span>
+    <span class="p">[{</span><span class="ss">:__struct__</span><span class="p">,</span> <span class="no">Person</span><span class="p">}</span> <span class="o">|</span> <span class="n">list</span><span class="p">]</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">count</span><span class="p">(</span><span class="n">enumerable</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Enumerable</span><span class="o">.</span><span class="no">List</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">to_list</span><span class="p">(</span><span class="n">enumerable</span><span class="p">))</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">member?</span><span class="p">(</span><span class="n">enumerable</span><span class="p">,</span> <span class="n">element</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Enumerable</span><span class="o">.</span><span class="no">List</span><span class="o">.</span><span class="n">member?</span><span class="p">(</span><span class="n">to_list</span><span class="p">(</span><span class="n">enumerable</span><span class="p">),</span> <span class="n">element</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">reduce</span><span class="p">(</span><span class="n">enumerable</span><span class="p">,</span> <span class="n">acc</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Enumerable</span><span class="o">.</span><span class="no">List</span><span class="o">.</span><span class="n">reduce</span><span class="p">(</span><span class="n">to_list</span><span class="p">(</span><span class="n">enumerable</span><span class="p">),</span> <span class="n">acc</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>構造体をリストにした後、リスト型に対する <code>Enumerable</code> の実装に渡しているだけです。<br>
+これで <code>Enumerable</code> プロトコルを実装したので、以下のように <code>for</code> でキーと値を列挙できるようになりました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">for</span> <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">}</span> <span class="o">&lt;-</span> <span class="n">person</span> <span class="k">do</span>
+<span class="o">...&gt;</span>   <span class="p">{</span><span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">}</span>
+<span class="o">...&gt;</span> <span class="k">end</span>
+<span class="p">[</span><span class="ss">__struct__:</span> <span class="no">Person</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"John"</span><span class="p">]</span>
+</pre></div></div>
+
+<p>続いて <code>Access</code> ビヘイビアを実装します。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Person</span> <span class="k">do</span>
+  <span class="k">defstruct</span> <span class="p">[</span><span class="ss">:name</span><span class="p">,</span> <span class="ss">:age</span><span class="p">]</span>
+
+  <span class="c1"># Access ビヘイビアを実装する</span>
+  <span class="nv">@behaviour</span> <span class="no">Access</span>
+
+  <span class="nv">@impl</span> <span class="no">Access</span>
+  <span class="k">def</span> <span class="n">fetch</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Access</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">term</span><span class="p">),</span> <span class="n">key</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">Access</span>
+  <span class="k">def</span> <span class="n">get</span><span class="p">(</span><span class="n">term</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">Access</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">term</span><span class="p">),</span> <span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">Access</span>
+  <span class="k">def</span> <span class="n">get_and_update</span><span class="p">(</span><span class="n">container</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="n">value</span><span class="p">,</span> <span class="n">container</span><span class="p">}</span> <span class="o">=</span> <span class="no">Access</span><span class="o">.</span><span class="n">get_and_update</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">container</span><span class="p">),</span> <span class="n">key</span><span class="p">,</span> <span class="n">fun</span><span class="p">)</span>
+    <span class="p">{</span><span class="n">value</span><span class="p">,</span> <span class="n">struct</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">container</span><span class="p">)}</span>
+  <span class="k">end</span>
+
+  <span class="nv">@impl</span> <span class="no">Access</span>
+  <span class="k">def</span> <span class="n">pop</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="n">value</span><span class="p">,</span> <span class="n">data</span><span class="p">}</span> <span class="o">=</span> <span class="no">Access</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="no">Map</span><span class="o">.</span><span class="n">from_struct</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">key</span><span class="p">)</span>
+    <span class="p">{</span><span class="n">value</span><span class="p">,</span> <span class="n">struct</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="n">data</span><span class="p">)}</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これで <code>person[:name]</code> と <code>put_in/3</code> でもちゃんと動作するようになりました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span> <span class="o">=</span> <span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">name:</span> <span class="s2">"John"</span><span class="p">,</span> <span class="ss">age:</span> <span class="mi">42</span><span class="p">}</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">person</span><span class="p">[</span><span class="ss">:name</span><span class="p">]</span>
+<span class="s2">"John"</span>
+<span class="n">iex</span><span class="o">&gt;</span> <span class="n">put_in</span><span class="p">(</span><span class="n">person</span><span class="p">,</span> <span class="p">[</span><span class="ss">:name</span><span class="p">],</span> <span class="s2">"Smith"</span><span class="p">)</span>
+<span class="p">%</span><span class="no">Person</span><span class="p">{</span><span class="ss">age:</span> <span class="mi">42</span><span class="p">,</span> <span class="ss">name:</span> <span class="s2">"Smith"</span><span class="p">}</span>
+</pre></div></div>
+
+<p>ここまですると、割と「構造体は <code>__struct__</code> が追加されただけのマップ」と言っても良さそうです。<br>
+ただ、構造体をマップみたいにフレキシブルに扱いたいなら、都度マップに変換すればいいだけです。ここまでする必要は多分ほぼ無いでしょう。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>構造体とマップは <code>Enumerable</code> プロトコルや <code>Access</code> ビヘイビアを実装していないということを、割と汎用的な処理を書いている時には忘れがちです。<br>
+「構造体なんてマップみたいなものでしょ」と思ってコードを書く時にはこの辺に気を付けましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>他には <code>Collectable</code> プロトコルも実装していないのですが、それは省略 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>なおこのケースなら <code>%{person | name: "Smith"}</code> とした方が素直で良いです。<code>put_in/2</code> が生きるのは <code>person.birthday.year</code> みたいなネストしたデータを扱う場合です。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

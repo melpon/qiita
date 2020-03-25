@@ -1,0 +1,237 @@
+<p>Elixirを使っていて最初に詰まったのが、関数やマクロに渡す引数の解釈です。</p>
+
+<p>例えば設定ファイルの書き方です。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="kn">use</span> <span class="no">Mix</span><span class="o">.</span><span class="no">Config</span>
+
+<span class="n">config</span> <span class="ss">:logger</span><span class="p">,</span>
+  <span class="ss">backends:</span> <span class="p">[</span><span class="ss">:console</span><span class="p">],</span>
+  <span class="ss">compile_time_purge_level:</span> <span class="ss">:info</span>
+
+<span class="n">config</span> <span class="ss">:logger</span><span class="p">,</span> <span class="ss">:console</span><span class="p">,</span>
+  <span class="ss">level:</span> <span class="ss">:debug</span>
+</pre></div></div>
+
+<p>最初はこの書き方は設定ファイル特有の構文だと思っていましたが、これは単なる<code>Mix.Config.config/{2,3}</code> マクロの呼び出しに過ぎないということを、大分後に知りました。</p>
+
+<p>更に、if〜else〜endやdef〜endといった構文も単なるマクロの呼び出しであり、引数を一定のルールに従って解釈しているだけに過ぎないのです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">if</span> <span class="k">cond</span> <span class="k">do</span>
+  <span class="ss">:foo</span>
+<span class="k">else</span>
+  <span class="ss">:bar</span>
+<span class="k">end</span>
+
+<span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これらの書き方で、引数は一体どんな風に解釈されるのかを説明します。</p>
+
+<h2>
+<span id="括弧の省略" class="fragment"></span><a href="#%E6%8B%AC%E5%BC%A7%E3%81%AE%E7%9C%81%E7%95%A5"><i class="fa fa-link"></i></a>括弧の省略</h2>
+
+<p>Elixirでは、関数呼び出しの括弧を省略した形で記述できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span> <span class="c1"># 普通の書き方</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">20</span> <span class="c1"># 省略した書き方</span>
+</pre></div></div>
+
+<p>ただし、曖昧になるようなケースでは省略できません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span><span class="p">,</span> <span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">20</span> <span class="c1"># コンパイルエラー！曖昧な呼び出し</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span><span class="p">,</span> <span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span> <span class="c1"># OK</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">))</span> <span class="c1"># OK</span>
+</pre></div></div>
+
+<p>設定ファイルは <code>Mix.Config.config/{2,3}</code> マクロの呼び出しであるので、この括弧を省略せず、以下の様に書くことができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">config</span><span class="p">(</span><span class="ss">:logger</span><span class="p">,</span>
+  <span class="ss">backends:</span> <span class="p">[</span><span class="ss">:console</span><span class="p">],</span>
+  <span class="ss">compile_time_purge_level:</span> <span class="ss">:info</span><span class="p">)</span>
+</pre></div></div>
+
+<h2>
+<span id="キーワードリスト" class="fragment"></span><a href="#%E3%82%AD%E3%83%BC%E3%83%AF%E3%83%BC%E3%83%89%E3%83%AA%E3%82%B9%E3%83%88"><i class="fa fa-link"></i></a>キーワードリスト</h2>
+
+<p>Elixirにはキーワードリストという構文があります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">x</span> <span class="o">=</span> <span class="p">[</span><span class="ss">a:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">20</span><span class="p">]</span>
+</pre></div></div>
+
+<p>これは以下の様に書いたのと同じ意味になります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">x</span> <span class="o">=</span> <span class="p">[{</span><span class="ss">:a</span><span class="p">,</span> <span class="mi">10</span><span class="p">},</span> <span class="p">{</span><span class="ss">:b</span><span class="p">,</span> <span class="mi">20</span><span class="p">}]</span>
+</pre></div></div>
+
+<p>これ自体は別にそんな便利でない機能に見えるのですが、実はElixirでは頻繁にこれを関数に渡しています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="n">args</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">([</span><span class="ss">a:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">20</span><span class="p">])</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="ss">a:</span> <span class="mi">11</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">21</span><span class="p">)</span>   <span class="c1"># !</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="ss">a:</span> <span class="mi">12</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">22</span>    <span class="c1"># !!</span>
+</pre></div></div>
+
+<p>出力:</p>
+
+<div class="code-frame" data-lang="text"><div class="highlight"><pre>[a: 10, b: 20]
+[a: 11, b: 21]
+[a: 12, b: 22]
+</pre></div></div>
+
+<p>キーワードリストは、関数に渡す場合にはコード中の <code># !</code> の行で書いてるように <strong><code>[]</code>を省略できます</strong> 。<br>
+先程説明したように、括弧も省略できるので、<code># !!</code>の行のように書けます。</p>
+
+<p>つまり関数呼び出しで <code>X.f a: 10, b: 20</code> という記述があった場合、<code>a: 10, b: 20</code>というのはキーワードリストであり、受け取る側は一引数として扱われるのです<sup id="fnref1"><a href="#fn1" rel="footnote" title="受け取ったキーワードリストを操作するには Keyword モジュールを利用します。">1</a></sup>。</p>
+
+<p>キーワードリストとそうでない引数を混ぜた場合、以下の様になります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">X</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># 両者とも同じ呼び出し</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="ss">a:</span> <span class="mi">30</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">40</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="p">[</span><span class="ss">a:</span> <span class="mi">30</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">40</span><span class="p">])</span>
+</pre></div></div>
+
+<p><code>X.f 10, 20, a: 30, b: 40</code> という書き方は、パッと見た感じだと4引数に見えますが、これは <code>X.f(10, 20, [a: 30, b: 40])</code> と解釈され、３引数の関数呼び出しになります。</p>
+
+<p>つまり <strong>関数の引数を区切るカンマより、キーワードリストのカンマの方が結合順位が高い</strong> ということです<sup id="fnref2"><a href="#fn2" rel="footnote" title="これは人間が見たときの解釈の話であり、コンパイラが実際にカンマの結合順位を見てるかどうかは知りません">2</a></sup>。</p>
+
+<p>また、キーワードリストで<code>[]</code>を省略可能なのは、引数の最後にある場合だけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="ss">a:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">40</span> <span class="c1"># コンパイルエラー！構文が間違っている</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="p">[</span><span class="ss">a:</span> <span class="mi">10</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">20</span><span class="p">],</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">40</span> <span class="c1"># OK</span>
+</pre></div></div>
+
+<p>つまり最初の設定ファイルの構文は、以下の様に解釈できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># これは</span>
+<span class="n">config</span> <span class="ss">:logger</span><span class="p">,</span>
+  <span class="ss">backends:</span> <span class="p">[</span><span class="ss">:console</span><span class="p">],</span>
+  <span class="ss">compile_time_purge_level:</span> <span class="ss">:info</span>
+
+<span class="c1"># このように解釈される</span>
+<span class="n">config</span><span class="p">(</span><span class="ss">:logger</span><span class="p">,</span> <span class="p">[</span><span class="ss">backends:</span> <span class="p">[</span><span class="ss">:console</span><span class="p">],</span>
+                 <span class="ss">compile_time_purge_level:</span> <span class="ss">:info</span><span class="p">])</span>
+
+<span class="c1"># これは</span>
+<span class="n">config</span> <span class="ss">:logger</span><span class="p">,</span> <span class="ss">:console</span><span class="p">,</span>
+  <span class="ss">level:</span> <span class="ss">:debug</span>
+
+<span class="c1"># このように解釈される</span>
+<span class="n">config</span><span class="p">(</span><span class="ss">:logger</span><span class="p">,</span> <span class="ss">:console</span><span class="p">,</span> <span class="p">[</span><span class="ss">level:</span> <span class="ss">:debug</span><span class="p">])</span>
+</pre></div></div>
+
+<p><code>backends: [:console], compile_time_purge_level: :info</code> というのは、キーワードリストであり、これらは１引数として解釈されます。<br>
+つまり最初の呼び出しでは <code>config/2</code> を、２番目の呼び出しでは <code>config/3</code> を使っているだけだということが分かります。</p>
+
+<h2>
+<span id="doとelse" class="fragment"></span><a href="#do%E3%81%A8else"><i class="fa fa-link"></i></a>doとelse</h2>
+
+<p>doとelseブロックは、特定のキーワードリストを生成する糖衣構文であると言えます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">100</span> <span class="k">do</span>
+  <span class="ss">:foo</span>
+<span class="k">else</span>
+  <span class="ss">:bar</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これは、以下の様に解釈されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="p">[</span><span class="k">do</span><span class="p">:</span> <span class="ss">:foo</span><span class="p">,</span> <span class="k">else</span><span class="p">:</span> <span class="ss">:bar</span><span class="p">])</span>
+</pre></div></div>
+
+<p>実際、上記のように書いても同じ意味になります。</p>
+
+<p>これはキーワードリストとも組み合わせられます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># この呼び出しは</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span> <span class="mi">10</span> <span class="mi">20</span> <span class="ss">a:</span> <span class="mi">30</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">40</span> <span class="k">do</span>
+  <span class="mi">100</span>
+<span class="k">else</span>
+  <span class="mi">200</span>
+<span class="k">end</span>
+
+<span class="c1"># 以下の様に書いたのと同じ</span>
+<span class="no">X</span><span class="o">.</span><span class="n">f</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="p">[</span><span class="ss">a:</span> <span class="mi">30</span><span class="p">,</span> <span class="ss">b:</span> <span class="mi">40</span><span class="p">],</span> <span class="p">[</span><span class="k">do</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="k">else</span><span class="p">:</span> <span class="mi">200</span><span class="p">])</span>
+<span class="c1"># X.f(10, 20, [a: 30, b: 40, do: 100, else: 200]) ではないことに注意</span>
+</pre></div></div>
+
+<p>このように、キーワードリストとdo,elseの部分は別のキーワードリストになることに注意して下さい。</p>
+
+<p>これらを理解すれば、<code>if</code>や<code>def</code>がどのように解釈されるのかが分かります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># これは</span>
+<span class="k">if</span> <span class="k">cond</span> <span class="k">do</span>
+  <span class="ss">:foo</span>
+<span class="k">else</span>
+  <span class="ss">:bar</span>
+<span class="k">end</span>
+
+<span class="c1"># このように解釈される</span>
+<span class="k">if</span><span class="p">(</span><span class="k">cond</span><span class="p">,</span> <span class="p">[</span><span class="k">do</span><span class="p">:</span> <span class="ss">:foo</span><span class="p">,</span> <span class="k">else</span><span class="p">:</span> <span class="ss">:bar</span><span class="p">])</span>
+
+<span class="c1"># これは</span>
+<span class="k">def</span> <span class="n">f</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">do</span>
+  <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+<span class="k">end</span>
+
+<span class="c1"># このように解釈される</span>
+<span class="k">def</span><span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="p">[</span><span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="p">])</span>
+</pre></div></div>
+
+<h2>
+<span id="ライブラリを適切に使う" class="fragment"></span><a href="#%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA%E3%82%92%E9%81%A9%E5%88%87%E3%81%AB%E4%BD%BF%E3%81%86"><i class="fa fa-link"></i></a>ライブラリを適切に使う</h2>
+
+<p>これらのルールを知っていれば、ライブラリを使うのも楽になります。</p>
+
+<p>例えば <a href="http://elixir-lang.org/docs/stable/elixir/GenServer.html#start_link/3" rel="nofollow noopener" target="_blank"><code>GenServer.start_link/3</code></a> は以下の定義になっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">start_link</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">options</span> <span class="p">\\</span> <span class="p">[])</span>
+</pre></div></div>
+
+<p>もし<code>[]</code>が省略できることを知らなければ以下の様に書くでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">GenServer</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="ss">:ok</span><span class="p">,</span> <span class="p">[</span><span class="ss">name:</span> <span class="ss">:foobar</span><span class="p">,</span> <span class="ss">debug:</span> <span class="ss">:trace</span><span class="p">])</span>
+</pre></div></div>
+
+<p>しかし、<code>options</code>が引数の最後でキーワードリスト形式になっているのは、以下の様にキーワードリストを省略して書くことを想定しているからだと想像できます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">GenServer</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="bp">__MODULE__</span><span class="p">,</span> <span class="ss">:ok</span><span class="p">,</span> <span class="ss">name:</span> <span class="ss">:foobar</span><span class="p">,</span> <span class="ss">debug:</span> <span class="ss">:trace</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>()</code>や<code>[]</code>を書くべきかどうかは個人やプロジェクトの判断に寄るでしょうけれども、もし上記のように書かれていたとしても、単に <code>GenServer.start_link/3</code> が呼ばれているだけだと分かっていれば、読む側も大分楽になるはずです。</p>
+
+<p>これらのルールを理解して、うまくElixirのコードを読み書きしましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>受け取ったキーワードリストを操作するには <a href="https://hexdocs.pm/elixir/Keyword.html" rel="nofollow noopener" target="_blank"><code>Keyword</code></a> モジュールを利用します。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>これは人間が見たときの解釈の話であり、コンパイラが実際にカンマの結合順位を見てるかどうかは知りません <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>

@@ -1,0 +1,406 @@
+<p>Plug について説明します。</p>
+
+<h2>
+<span id="plug-とは" class="fragment"></span><a href="#plug-%E3%81%A8%E3%81%AF"><i class="fa fa-link"></i></a>Plug とは</h2>
+
+<p>Elixir の HTTP サーバの実装の１つです。<br>
+内部では Erlang の信頼できる HTTP サーバ <a href="https://ninenines.eu/" rel="nofollow noopener" target="_blank">Cowboy</a> を利用してますが、アダプターを切り替えることで他のライブラリにもできます。<sup id="fnref1"><a href="#fn1" rel="footnote" title="ただし標準では Cowboy にしか対応してないので、他の HTTP サーバに切り替えたいなら自前で実装する必要があります。">1</a></sup></p>
+
+<p>2017年12月19日現在、Cowboy 2 に対応した 1.5.0-rc.0 が出ています。<br>
+が、rc.0 なので、ちゃんとした 1.5.0 がリリースされるまでは 1.4.3 を使っておくのが無難でしょう。</p>
+
+<h2>
+<span id="phoenix-との違い" class="fragment"></span><a href="#phoenix-%E3%81%A8%E3%81%AE%E9%81%95%E3%81%84"><i class="fa fa-link"></i></a>Phoenix との違い</h2>
+
+<p>Phoenix は Plug を利用して作っています。<br>
+Phoenix に渡ってくる <code>conn</code> は <code>Plug.Conn</code> なので、Phoenix を弄るには Plug の知識が必要になってきます。<br>
+また、Phoenix はプラグのインターフェースである <code>init/1</code> と <code>call/2</code> をうまく扱えるようにしているので、<code>Plug</code> ライブラリに定義された各モジュールプラグをそのまま利用できるようになっています。</p>
+
+<p>ただし、<code>Plug.Router</code> のルーティングの仕組みは利用していません。<br>
+そのため Phoenix のルーティングは Plug の <code>get "/foo/:bar", do: ...</code> や <code>forward ...</code> みたいな書き方とは全く関係がありません。</p>
+
+<h2>
+<span id="plug-の仕組み" class="fragment"></span><a href="#plug-%E3%81%AE%E4%BB%95%E7%B5%84%E3%81%BF"><i class="fa fa-link"></i></a>Plug の仕組み</h2>
+
+<p>Plug の仕組みは超簡単です。<br>
+まず、お約束どおり以下の様に書けば、8000 番ポートで HTTP のリクエストを待ち受けるようになります。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">application.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Application</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Application</span>
+
+  <span class="k">def</span> <span class="n">start</span><span class="p">(</span><span class="n">_type</span><span class="p">,</span> <span class="n">_args</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+      <span class="no">Plug</span><span class="o">.</span><span class="no">Adapters</span><span class="o">.</span><span class="no">Cowboy</span><span class="o">.</span><span class="n">child_spec</span><span class="p">(</span><span class="ss">:http</span><span class="p">,</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span><span class="p">,</span> <span class="p">[],</span> <span class="p">[</span><span class="ss">port:</span> <span class="mi">8000</span><span class="p">]),</span>
+    <span class="p">]</span>
+
+    <span class="n">opts</span> <span class="o">=</span> <span class="p">[</span><span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Supervisor</span><span class="p">]</span>
+    <span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p><code>MyApp.Router</code> という指定が重要で、このモジュールの <code>call/2</code> 関数が全ての HTTP リクエストの起点になります。<br>
+つまり、全ての HTTP リクエストはまず <code>MyApp.Router.call(conn, opts)</code> に渡されることになります。</p>
+
+<p>これが分かっていれば、以下の様なコードを書くだけで HTTP サーバが作れます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="c1"># init/1 も定義する必要がある</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">opts</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="n">conn</span><span class="o">.</span><span class="n">path_info</span> <span class="k">do</span>
+      <span class="p">[]</span> <span class="o">-&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello"</span><span class="p">)</span>
+      <span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello, </span><span class="si">#{</span><span class="n">name</span><span class="si">}</span><span class="s2">!"</span><span class="p">)</span>
+      <span class="n">_</span> <span class="o">-&gt;</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">404</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre><span class="nv">$ </span>curl http://localhost:8000/
+hello
+<span class="nv">$ </span>curl http://localhost:8000/foo
+hello, foo!
+</pre></div></div>
+
+<p>つまり Plug がやっているのは、</p>
+
+<ol>
+<li>HTTP リクエストを受けとるためにポートを開いて待ち受ける</li>
+<li>リクエストを受けたら、そのリクエストをパースして <code>Plug.Conn</code> 構造体を作る</li>
+<li>指定されたモジュールの <code>call/2</code> 関数を呼ぶ</li>
+</ol>
+
+<p>だけです。</p>
+
+<h2>
+<span id="プラグ構築周りのモジュール" class="fragment"></span><a href="#%E3%83%97%E3%83%A9%E3%82%B0%E6%A7%8B%E7%AF%89%E5%91%A8%E3%82%8A%E3%81%AE%E3%83%A2%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB"><i class="fa fa-link"></i></a>プラグ構築周りのモジュール</h2>
+
+<p>もちろん、これだけだとまともにルーティングすらできないので、Plug は便利な機能を用意しています。</p>
+
+<p>ここでは <a href="https://hexdocs.pm/plug/Plug.Builder.html" rel="nofollow noopener" target="_blank">Plug.Builder</a> と <a href="https://hexdocs.pm/plug/Plug.Router.html" rel="nofollow noopener" target="_blank">Plug.Router</a> を紹介します。</p>
+
+<h3>
+<span id="plugbuilder" class="fragment"></span><a href="#plugbuilder"><i class="fa fa-link"></i></a>Plug.Builder</h3>
+
+<p>複数のプラグを連結するためのモジュールです。</p>
+
+<p>通常、HTTP リクエストを処理する時には、薄いミドルウェアを何層にも重ねて処理することが多くなっています。<br>
+<code>MyApp.Router.call/2</code> で静的ファイルの配信、セッションのロード、CSRF トークンのチェックを行って処理する場合、以下の様になるでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_opts</span><span class="p">)</span> <span class="k">do</span>
+  <span class="c1"># 静的ファイルのリクエストだったら配信する</span>
+  <span class="k">case</span> <span class="n">serve_static_files</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span> <span class="k">do</span>
+    <span class="p">{</span><span class="ss">:handled</span><span class="p">,</span> <span class="n">conn</span><span class="p">}</span> <span class="o">-&gt;</span>
+      <span class="c1"># 配信したので終了</span>
+      <span class="n">conn</span>
+    <span class="p">{</span><span class="ss">:not_handled</span><span class="p">,</span> <span class="n">conn</span><span class="p">}</span> <span class="o">-&gt;</span>
+      <span class="c1"># 静的ファイルのリクエストでなかったので次の処理</span>
+      <span class="c1"># セッションをロードする</span>
+      <span class="n">conn</span> <span class="o">=</span> <span class="n">load_session</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span>
+      <span class="c1"># CSRF トークンのチェック</span>
+      <span class="k">case</span> <span class="n">verify_csrf</span><span class="p">(</span><span class="n">conn</span><span class="p">)</span> <span class="k">do</span>
+        <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">conn</span><span class="p">}</span> <span class="o">-&gt;</span>
+          <span class="c1"># CSRF トークンが正しかったのでメインの処理を行う</span>
+          <span class="o">...</span>
+        <span class="p">{</span><span class="ss">:error</span><span class="p">,</span> <span class="n">conn</span><span class="p">}</span> <span class="o">-&gt;</span>
+          <span class="c1"># CSRF トークンが間違っていたのでエラーにする</span>
+          <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">400</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+      <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>こんなのは書いていられないので、共通のインターフェースを用意して、それを満たすことでこれらを簡単に呼び出せるようにしています。</p>
+
+<p>この共通のインターフェースを満たしたモジュールを、ここでは <em>プラグ</em> と呼びます。<br>
+プラグには <em>モジュールプラグ</em> と <em>関数プラグ</em> の2種類があります。</p>
+
+<p>モジュールプラグは <code>init/1</code> と <code>call/2</code> 関数を実装した、つまり Plug ビヘイビアを実装したモジュールです。<br>
+関数プラグは、自身のモジュールにある、<code>conn</code> と <code>opts</code> を受け取り、新しい <code>conn</code> を返す関数の名前です。</p>
+
+<p><code>Plug.Builder</code> と標準のプラグを利用すると、上記のコードは以下の様になります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span>
+
+  <span class="c1"># 静的ファイルの配信</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Static</span><span class="p">,</span> <span class="ss">from:</span> <span class="s2">"priv/static"</span>
+  <span class="c1"># セッションのロード</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="p">,</span> <span class="ss">store:</span> <span class="ss">:ets</span><span class="p">,</span> <span class="ss">key:</span> <span class="s2">"_my_app_session"</span><span class="p">,</span> <span class="ss">table:</span> <span class="ss">:session</span>
+  <span class="c1"># CSRF トークンのチェック</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">CSRFProtection</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="kn">super</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+    <span class="c1"># 上記のチェックを抜けた後の処理</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>とても簡単です。<br>
+このコードは、<code>use Plug.Builder</code> によって以下の様なコードになっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">try</span> <span class="k">do</span>
+      <span class="c1"># 静的ファイルの配信</span>
+      <span class="n">conn</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Static</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Static</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">from:</span> <span class="s2">"priv/static"</span><span class="p">))</span>
+      <span class="c1"># 中断するかどうかのチェック</span>
+      <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">halted</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="k">throw</span> <span class="n">conn</span>
+
+      <span class="c1"># セッションのロード</span>
+      <span class="n">conn</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Session</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="ss">store:</span> <span class="ss">:ets</span><span class="p">,</span> <span class="ss">key:</span> <span class="s2">"_my_app_session"</span><span class="p">,</span> <span class="ss">table:</span> <span class="ss">:session</span><span class="p">))</span>
+      <span class="c1"># 中断するかどうかのチェック</span>
+      <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">halted</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="k">throw</span> <span class="n">conn</span>
+
+      <span class="c1"># CSRF トークンのチェック</span>
+      <span class="n">conn</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">CSRFProtection</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="no">Plug</span><span class="o">.</span><span class="no">CSRFProtection</span><span class="o">.</span><span class="n">init</span><span class="p">())</span>
+      <span class="c1"># 中断するかどうかのチェック</span>
+      <span class="k">if</span> <span class="n">conn</span><span class="o">.</span><span class="n">halted</span><span class="p">,</span> <span class="k">do</span><span class="p">:</span> <span class="k">throw</span> <span class="n">conn</span>
+
+      <span class="n">conn</span>
+    <span class="k">else</span>
+      <span class="n">conn</span> <span class="o">-&gt;</span>
+        <span class="c1"># 上記のチェックを抜けた後の処理</span>
+        <span class="o">...</span>
+    <span class="k">catch</span>
+      <span class="n">conn</span> <span class="o">-&gt;</span> <span class="n">conn</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>use Plug.Builder</code> を使うことで、それぞれの <code>plug ...</code> を連結して上記のように呼び出すように実装してくれます。<sup id="fnref2"><a href="#fn2" rel="footnote" title="正確には init/1 はリクエストが来る度に呼ぶわけではなく、コンパイル時に一回呼ぶだけです。あとはその結果を毎回 call/2 の第二引数に入れています。また、throw/1 はソースコードの見通しを良くするために使っているだけで、実際に throw/1 が使われている訳ではありません。">2</a></sup><br>
+ここで使っているプラグは、全てモジュールプラグになります。</p>
+
+<p>また、<code>use Plug.Builder</code> を使うと、そのモジュール内で <code>init/1</code> と <code>call/2</code> を自動的に定義してくれます。<br>
+そのため <code>use Plug.Builder</code> を呼び出したモジュールもプラグになります。</p>
+
+<h3>
+<span id="plugrouter" class="fragment"></span><a href="#plugrouter"><i class="fa fa-link"></i></a>Plug.Router</h3>
+
+<p><code>use Plug.Router</code> は、<code>use Plug.Builder</code> することに加えて、<code>match/2</code> 関数と <code>dispatch/2</code> 関数を定義します。</p>
+
+<p>Plug では URL 別のルーティングもプラグの一部分として定義されていて、<code>match/2</code> と <code>dispatch/2</code> はどちらも関数プラグになっています。</p>
+
+<p><code>Plug.Router.get/3</code> や <code>Plug.Router.post/3</code> で定義したルーティングに対して、どれを呼び出すかを決定するのが <code>:match</code> プラグ、実際に呼び出すのが <code>:dispatch</code> プラグになります。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="n">plug</span> <span class="ss">:match</span>
+  <span class="n">plug</span> <span class="ss">:dispatch</span>
+
+  <span class="n">get</span> <span class="s2">"/"</span> <span class="k">do</span>
+    <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello"</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="n">get</span> <span class="s2">"/:name"</span> <span class="k">do</span>
+    <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello, </span><span class="si">#{</span><span class="n">name</span><span class="si">}</span><span class="s2">!"</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<div class="code-frame" data-lang="bash"><div class="highlight"><pre><span class="nv">$ </span>curl http://localhost:8000/
+hello
+<span class="nv">$ </span>curl http://localhost:8000/foo
+hello, foo!
+</pre></div></div>
+
+<p>このように書くことで、最初に書いた <code>MyApp.Router</code> の実装とほぼ同じになります。違いは、こちらの実装は <code>GET</code> リクエストしか処理しないことぐらいでしょう。<sup id="fnref3"><a href="#fn3" rel="footnote" title="get/3 の中で、どこからともなく conn 変数が使えていますが、これがマクロの力です。滅びて欲しい。">3</a></sup></p>
+
+<p>この動作を見て分かるように、<code>use Plug.Router</code> によって自動的に定義された <code>match/2</code> や <code>dispatch/2</code> 関数は、<code>Plug.Router.get/3</code> によって定義されたルーティング情報を見て、適切に分岐して呼び出す実装になっています。</p>
+
+<p><code>:dispatch</code> の部分を改造すれば、全てのリクエストに対する共通処理が書けます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="n">plug</span> <span class="ss">:match</span>
+  <span class="n">plug</span> <span class="ss">:my_dispatch</span>
+
+  <span class="n">get</span> <span class="s2">"/"</span> <span class="k">do</span>
+    <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello"</span><span class="p">)</span>
+  <span class="k">end</span>
+  <span class="n">get</span> <span class="s2">"/:name"</span> <span class="k">do</span>
+    <span class="no">Plug</span><span class="o">.</span><span class="no">Conn</span><span class="o">.</span><span class="n">send_resp</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="s2">"hello, </span><span class="si">#{</span><span class="n">name</span><span class="si">}</span><span class="s2">!"</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">my_dispatch</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># 共通の処理</span>
+    <span class="n">do_something</span><span class="p">()</span>
+    <span class="c1"># ルーティング別の処理</span>
+    <span class="n">dispatch</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>自作の関数プラグ <code>:my_dispatch</code> を定義し、そこの中で共通処理を実装し、その後で元の <code>:dispatch</code> プラグを呼び出しています。<br>
+このように、<code>plug ...</code> を適切に書くことで、いろいろと共通処理をうまく分離できるようになります。</p>
+
+<h3>
+<span id="forward-を活用する" class="fragment"></span><a href="#forward-%E3%82%92%E6%B4%BB%E7%94%A8%E3%81%99%E3%82%8B"><i class="fa fa-link"></i></a>forward を活用する</h3>
+
+<p>ある URL 以下だけ特定のプラグを適用したいこともあります。<br>
+その場合には <code>Plug.Router.forward/2</code> を使うのがいいでしょう。</p>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">my_app/router.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="n">plug</span> <span class="ss">:match</span>
+  <span class="n">plug</span> <span class="ss">:dispatch</span>
+
+  <span class="n">get</span> <span class="s2">"/"</span> <span class="k">do</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+
+  <span class="c1"># /api 以下は別のルータに任せる</span>
+  <span class="n">forward</span> <span class="s2">"/api"</span><span class="p">,</span> <span class="ss">to:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span><span class="o">.</span><span class="no">API</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<div class="code-frame" data-lang="elixir">
+<div class="code-lang"><span class="bold">my_app/router/api.ex</span></div>
+<div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Router</span><span class="o">.</span><span class="no">API</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="c1"># JSON のパースを行う</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Parsers</span><span class="p">,</span> <span class="ss">parsers:</span> <span class="p">[</span><span class="ss">:json</span><span class="p">]</span>
+
+  <span class="n">plug</span> <span class="ss">:match</span>
+  <span class="n">plug</span> <span class="ss">:dispatch</span>
+
+  <span class="n">post</span> <span class="s2">"/"</span> <span class="k">do</span>
+    <span class="c1"># JSON のリクエストボディが conn.body_params に入っている</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">body_params</span><span class="p">[</span><span class="s2">"name"</span><span class="p">]</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div>
+</div>
+
+<p><code>/api</code> 以下の URL を、全て <code>MyApp.Router.API</code> に転送しています。<br>
+<code>MyApp.Router.API</code> でモジュールプラグ <code>Plug.Parsers</code> を使うことで、<code>/api</code> 以下だけ JSON をパースする処理にしています。</p>
+
+<p>あるいは、URL だけでなく、中のデータを見て、特定の条件だった場合だけ転送したいとか、URL を弄って転送したいという場合には <code>Plug.Router.Utils.forward/4</code> を使えば、好きなタイミングで転送できます。</p>
+
+<p>このように Plug では、やろうと思えば結構柔軟な処理ができます。</p>
+
+<h2>
+<span id="plug-標準のモジュールプラグ" class="fragment"></span><a href="#plug-%E6%A8%99%E6%BA%96%E3%81%AE%E3%83%A2%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB%E3%83%97%E3%83%A9%E3%82%B0"><i class="fa fa-link"></i></a>Plug 標準のモジュールプラグ</h2>
+
+<p>Plug が標準で用意しているモジュールプラグについて説明します。<br>
+現在は、全部で以下のモジュールプラグが用意されています。</p>
+
+<ul>
+<li><a href="https://hexdocs.pm/plug/Plug.CSRFProtection.html" rel="nofollow noopener" target="_blank">Plug.CSRFProtection</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.Head.html" rel="nofollow noopener" target="_blank">Plug.Head</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.Logger.html" rel="nofollow noopener" target="_blank">Plug.Logger</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.MethodOverride.html" rel="nofollow noopener" target="_blank">Plug.MethodOverride</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.Parsers.html" rel="nofollow noopener" target="_blank">Plug.Parsers</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.RequestId.html" rel="nofollow noopener" target="_blank">Plug.RequestId</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.SSL.html" rel="nofollow noopener" target="_blank">Plug.SSL</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.Session.html" rel="nofollow noopener" target="_blank">Plug.Session</a></li>
+<li><a href="https://hexdocs.pm/plug/Plug.Static.html" rel="nofollow noopener" target="_blank">Plug.Static</a></li>
+</ul>
+
+<h3>
+<span id="plugcsrfprotection" class="fragment"></span><a href="#plugcsrfprotection"><i class="fa fa-link"></i></a>Plug.CSRFProtection</h3>
+
+<p>CSRF を防ぐためのモジュールプラグです。<br>
+セッション情報が必要になってくるので、通常は <code>Plug.Session</code> と一緒に利用します。</p>
+
+<p>クライアントに HTML を返す時に <code>Plug.CSRFProtection.get_csrf_token/0</code> を使って CSRF トークンを設定しておくと、このモジュールがその情報を自動でセッションに入れておいてくれます。<br>
+そして、次のリクエストではクライアントに <code>"_csrf_token"</code> パラメータか <code>"x-csrf-token"</code> リクエストヘッダに CSRF トークンを入れてもらうようにし、このプラグでは、その CSRF トークンが、直前でセッションに保存した CSRF トークンと同じかどうかを判断するようになっています。</p>
+
+<h3>
+<span id="plughead" class="fragment"></span><a href="#plughead"><i class="fa fa-link"></i></a>Plug.Head</h3>
+
+<p>HEAD リクエストを GET リクエストに変換します。ほんとにそれだけです。</p>
+
+<h3>
+<span id="pluglogger" class="fragment"></span><a href="#pluglogger"><i class="fa fa-link"></i></a>Plug.Logger</h3>
+
+<p>リクエスト毎にログとステータスと処理時間を出してくれます。<br>
+ログレベルは <code>opts</code> で調整できます。</p>
+
+<h3>
+<span id="plugmethodoverride" class="fragment"></span><a href="#plugmethodoverride"><i class="fa fa-link"></i></a>Plug.MethodOverride</h3>
+
+<p><code>Plug.Parsers</code> あたりでリクエストボディを処理した結果、<code>conn.body_params["_method"]</code> に <code>"DELETE"</code>, <code>"PUT"</code>, <code>"PATCH"</code> が設定されてたら、そのメソッドに置き換えるモジュールプラグです。</p>
+
+<p>HTML のフォームが GET と POST しかサポートしていないので、それ以外のメソッドを使えるようにするための機能のようです。</p>
+
+<h3>
+<span id="plugparsers" class="fragment"></span><a href="#plugparsers"><i class="fa fa-link"></i></a>Plug.Parsers</h3>
+
+<p>リクエストボディをパースするためのモジュールプラグ。<br>
+標準では <code>:json</code> を指定すると <code>"application/json"</code> ヘッダ、<code>:urlencoded</code> を指定すると <code>"application/x-www-form-urlencoded"</code> ヘッダ、<code>:multipart</code> を指定すると <code>"multipart/form-data"</code> か <code>"multipart/mixed"</code> ヘッダの付いたボディをパースしてくれます。<br>
+結果は <code>conn.body_params</code> と <code>conn.params</code> に設定されます。</p>
+
+<p>これらのパーサは自分で追加することも可能です。詳細はドキュメントで。</p>
+
+<h3>
+<span id="plugrequestid" class="fragment"></span><a href="#plugrequestid"><i class="fa fa-link"></i></a>Plug.RequestId</h3>
+
+<p>リクエスト毎にリクエストIDを発行して、自動でレスポンスヘッダに付けてくれるプラグです。<br>
+Loggerのメタデータに <code>:request_id</code> を設定してくれるので、Loggerでそれを出力するようにしておけば、リクエスト毎の処理を追いやすくなります。</p>
+
+<p>また、HTTP リクエストヘッダに <code>"x-request-id"</code> が入っていると、それをリクエストIDとして利用します。<br>
+クライアントも含めた一連の流れを追いたい場合に使えます。</p>
+
+<h3>
+<span id="plugssl" class="fragment"></span><a href="#plugssl"><i class="fa fa-link"></i></a>Plug.SSL</h3>
+
+<p>HTTP リクエストのスキームが <code>https</code> じゃなかった場合にリダイレクトすることで SSL での接続を強制するプラグです。</p>
+
+<p>Nginx の後ろなんかにある場合は全て http になってしまうので、<code>opts</code> に <code>rewrite_on: [:x_forwarded_proto]</code> を指定することで、Nginx が自動で付ける <code>"x-forwarded-proto"</code> ヘッダを見て http か https かを判断してくれるようになります。</p>
+
+<h3>
+<span id="plugsession" class="fragment"></span><a href="#plugsession"><i class="fa fa-link"></i></a>Plug.Session</h3>
+
+<p>セッション情報を取得したり格納したりするプラグです。</p>
+
+<p>ユーザはこのプラグを追加した後、<code>Plug.Conn.get_session/2</code> や <code>Plug.Conn.put_session/3</code> あたりを使って取得・格納したりします。</p>
+
+<p>セッションを格納する方法として、標準では ETS を使う <code>Plug.Session.ETS</code> とクッキーを使う <code>Plug.Session.COOKIE</code> の2種類を用意しています。</p>
+
+<h3>
+<span id="plugstatic" class="fragment"></span><a href="#plugstatic"><i class="fa fa-link"></i></a>Plug.Static</h3>
+
+<p>静的ファイルを配信するためのプラグです。</p>
+
+<p>特定のリクエストパス以下の場合だけ配信する <code>:at</code> や、どこのディレクトリを起点にするかという <code>:from</code> を指定して使います。</p>
+
+<p>キャッシュシステムがあったり、gzip 圧縮されたファイルを配信したり、配信するファイルやディレクトリを制限したりといった機能があって、結構いろいろできるようです。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>マクロに惑わされず、心の目で <code>init/1</code> と <code>call/2</code> を見ましょう。<br>
+そうすれば Plug が凄く簡単に見えてきます。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>ただし標準では Cowboy にしか対応してないので、他の HTTP サーバに切り替えたいなら自前で実装する必要があります。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p>正確には <code>init/1</code> はリクエストが来る度に呼ぶわけではなく、コンパイル時に一回呼ぶだけです。あとはその結果を毎回 <code>call/2</code> の第二引数に入れています。また、<code>throw/1</code> はソースコードの見通しを良くするために使っているだけで、実際に <code>throw/1</code> が使われている訳ではありません。 <a href="#fnref2">↩</a></p>
+</li>
+
+<li id="fn3">
+<p><code>get/3</code> の中で、どこからともなく <code>conn</code> 変数が使えていますが、これがマクロの力です。滅びて欲しい。 <a href="#fnref3">↩</a></p>
+</li>
+
+</ol>
+</div>

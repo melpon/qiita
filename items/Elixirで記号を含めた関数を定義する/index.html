@@ -1,0 +1,202 @@
+<p>Elixirでは、小文字で始まる、記号を含まない関数しか定義できません。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># これはOK</span>
+<span class="k">def</span> <span class="n">fA0</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="c1"># 大文字で始まるのはNG</span>
+<span class="k">def</span> <span class="no">Hoge</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="c1"># 数字で始まるのはNG</span>
+<span class="k">def</span> <span class="err">0</span><span class="no">Fuga</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="c1"># 言語道断</span>
+<span class="k">def</span> <span class="n">!</span><span class="s2">"#$%&amp;'()=~|(a, b), do: a + b
+</span></pre></div></div>
+
+<p>一方、Erlangでは、関数名はただのアトムであるため、どのような文字列であっても定義可能です。</p>
+
+<div class="code-frame" data-lang="erlang"><div class="highlight"><pre><span class="c">%% OK
+</span><span class="nf">fA0</span><span class="p">(</span><span class="nv">A</span><span class="p">,</span> <span class="nv">B</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nv">A</span> <span class="o">+</span> <span class="nv">B</span><span class="p">.</span>
+
+<span class="c">%% OK
+</span><span class="nf">'Hoge'</span><span class="p">(</span><span class="nv">A</span><span class="p">,</span> <span class="nv">B</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nv">A</span> <span class="o">+</span> <span class="nv">B</span><span class="p">.</span>
+
+<span class="c">%% OK
+</span><span class="nf">'0Fuga'</span><span class="p">(</span><span class="nv">A</span><span class="p">,</span> <span class="nv">B</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nv">A</span> <span class="o">+</span> <span class="nv">B</span><span class="p">.</span>
+
+<span class="c">%% OK
+</span><span class="err">'</span><span class="o">!</span><span class="s">"#$%&amp;</span><span class="se">\'</span><span class="s">()=~|'(A, B) -&gt; A + B.
+</span></pre></div></div>
+
+<p>Elixirは最終的にErlangと同じ構造になるんだから、Erlangで出来るものがElixirで出来ない訳がないと、調べてみました。</p>
+
+<h2>
+<span id="アドホックな解決策" class="fragment"></span><a href="#%E3%82%A2%E3%83%89%E3%83%9B%E3%83%83%E3%82%AF%E3%81%AA%E8%A7%A3%E6%B1%BA%E7%AD%96"><i class="fa fa-link"></i></a>アドホックな解決策</h2>
+
+<p><a href="http://qiita.com/uasi/items/2d5dc9a06bc55b96ed6f" id="reference-30267c7610d19ee000e4">Elixir で普通では使えない記号が入った名前の関数を定義する</a> で書かれている方法で、任意のアトムを関数名にできます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Impl</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># 記号入り関数を定義</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="ss">:"!\"</span><span class="c1">#$%&amp;'()=~|"</span>
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="k">def</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">name</span><span class="p">)(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="k">do</span>
+        <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">MyApp</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Impl</span>
+<span class="k">end</span>
+
+<span class="c1"># このように呼び出す</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="s2">"!</span><span class="se">\"</span><span class="s2">#$%&amp;'()=~|"</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+</pre></div></div>
+
+<p>ただし、この方法だと、記号入りの関数を定義しようと思う度に、上記のようなモジュールを作って <code>use</code> を呼び出す必要があります。<br>
+もう少し汎用的に出来ないかと、いろいろ試してみました。</p>
+
+<h2>
+<span id="汎用的な解決策" class="fragment"></span><a href="#%E6%B1%8E%E7%94%A8%E7%9A%84%E3%81%AA%E8%A7%A3%E6%B1%BA%E7%AD%96"><i class="fa fa-link"></i></a>汎用的な解決策</h2>
+
+<p>[追記]<a href="http://qiita.com/melpon/items/451fdcd5be67f269a9af#comment-a2f4f7037beaf3e45872">コメント欄</a>にすごく簡単に書ける方法が書いてあるので、そちらを参照して下さい。このセクションはほぼ無意味になりますが、黒歴史的な意味で残しておきます。[/追記]</p>
+
+<p>以下のようなマクロを書くことで、汎用的に記号入り関数を書けるようにしました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Symbol</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">defsymbol</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">expr</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">define</span><span class="p">(</span><span class="ss">:def</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="p">[],</span> <span class="n">expr</span><span class="p">,</span> <span class="n">__CALLER__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defmacro</span> <span class="n">defsymbol</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="n">expr</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">define</span><span class="p">(</span><span class="ss">:def</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="n">expr</span><span class="p">,</span> <span class="n">__CALLER__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defmacro</span> <span class="n">defsymbolp</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">expr</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">define</span><span class="p">(</span><span class="ss">:defp</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="p">[],</span> <span class="n">expr</span><span class="p">,</span> <span class="n">__CALLER__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defmacro</span> <span class="n">defsymbolp</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="n">expr</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">define</span><span class="p">(</span><span class="ss">:defp</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="n">expr</span><span class="p">,</span> <span class="n">__CALLER__</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">assert_module_scope</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">fun</span><span class="p">,</span> <span class="n">arity</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="n">env</span><span class="o">.</span><span class="n">module</span> <span class="k">do</span>
+      <span class="no">nil</span> <span class="o">-&gt;</span> <span class="k">raise</span> <span class="no">ArgumentError</span><span class="p">,</span> <span class="s2">"cannot invoke </span><span class="si">#{</span><span class="n">fun</span><span class="si">}</span><span class="s2">/</span><span class="si">#{</span><span class="n">arity</span><span class="si">}</span><span class="s2"> outside module"</span>
+      <span class="n">_</span>   <span class="o">-&gt;</span> <span class="ss">:ok</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">assert_no_function_scope</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">fun</span><span class="p">,</span> <span class="n">arity</span><span class="p">)</span> <span class="k">do</span>
+    <span class="k">case</span> <span class="n">env</span><span class="o">.</span><span class="n">function</span> <span class="k">do</span>
+      <span class="no">nil</span> <span class="o">-&gt;</span> <span class="ss">:ok</span>
+      <span class="n">_</span>   <span class="o">-&gt;</span> <span class="k">raise</span> <span class="no">ArgumentError</span><span class="p">,</span> <span class="s2">"cannot invoke </span><span class="si">#{</span><span class="n">fun</span><span class="si">}</span><span class="s2">/</span><span class="si">#{</span><span class="n">arity</span><span class="si">}</span><span class="s2"> inside function/macro"</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+
+  <span class="k">defp</span> <span class="n">define</span><span class="p">(</span><span class="n">kind</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">opts</span><span class="p">,</span> <span class="n">expr</span><span class="p">,</span> <span class="n">env</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">assert_module_scope</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">assert_no_function_scope</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">line</span>
+
+    <span class="c1"># &gt;&gt;&gt;&gt;&gt;&gt;&gt;</span>
+    <span class="n">call</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">,</span> <span class="p">[</span><span class="ss">line:</span> <span class="n">line</span><span class="p">],</span> <span class="n">args</span><span class="p">}</span>
+    <span class="n">call</span> <span class="o">=</span> <span class="k">case</span> <span class="no">Keyword</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">opts</span><span class="p">,</span> <span class="ss">:when</span><span class="p">)</span> <span class="k">do</span>
+             <span class="p">{</span><span class="ss">:ok</span><span class="p">,</span> <span class="n">when_expr</span><span class="p">}</span> <span class="o">-&gt;</span> <span class="p">{</span><span class="ss">:when</span><span class="p">,</span> <span class="p">[</span><span class="ss">line:</span> <span class="n">line</span><span class="p">],</span> <span class="p">[</span><span class="n">call</span><span class="p">,</span> <span class="n">when_expr</span><span class="p">]}</span>
+             <span class="ss">:error</span> <span class="o">-&gt;</span> <span class="n">call</span>
+           <span class="k">end</span>
+    <span class="c1"># &lt;&lt;&lt;&lt;&lt;&lt;&lt;</span>
+
+    <span class="p">{</span><span class="n">call</span><span class="p">,</span> <span class="n">unquoted_call</span><span class="p">}</span> <span class="o">=</span> <span class="ss">:elixir_quote</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">call</span><span class="p">,</span> <span class="no">true</span><span class="p">)</span>
+    <span class="p">{</span><span class="n">expr</span><span class="p">,</span> <span class="n">unquoted_expr</span><span class="p">}</span> <span class="o">=</span> <span class="ss">:elixir_quote</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">expr</span><span class="p">,</span> <span class="no">true</span><span class="p">)</span>
+
+    <span class="n">check_clauses</span> <span class="o">=</span> <span class="ow">not</span><span class="p">(</span><span class="n">unquoted_expr</span> <span class="ow">or</span> <span class="n">unquoted_call</span><span class="p">)</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="ss">:elixir_locals</span><span class="o">.</span><span class="n">cache_env</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="ss">:elixir_def</span><span class="o">.</span><span class="n">store_definition</span><span class="p">(</span><span class="kn">unquote</span><span class="p">(</span><span class="n">line</span><span class="p">),</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">kind</span><span class="p">),</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">check_clauses</span><span class="p">),</span>
+                                   <span class="kn">unquote</span><span class="p">(</span><span class="n">call</span><span class="p">),</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">expr</span><span class="p">),</span> <span class="kn">unquote</span><span class="p">(</span><span class="n">pos</span><span class="p">))</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>これは <a href="https://github.com/elixir-lang/elixir/blob/07e05c5fd48495c860b840364e8f4f6e63cecb5b/lib/elixir/lib/kernel.ex#L3457" rel="nofollow noopener" target="_blank"><code>Kernel.def</code>マクロの実装</a> をほぼそのまま持ってきた形になります。<br>
+違いは <code>name</code> と <code>args</code> から <code>call</code> を作っているところ（<code># &gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> と <code># &lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> の間）だけです。</p>
+
+<p><code>defsymbol</code>を使って定義するには、<code>def f(a, b)</code> と書いていた部分を、<code>defsymbol :f, [a, b]</code> にするだけです。<br>
+<code>:f</code> の部分には任意のアトムを書けるため、どのような文字列でも記述できるようになります。</p>
+
+<p>具体的には、以下のように使います。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyApp</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">Symbol</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">defsymbol:</span> <span class="mi">3</span><span class="p">,</span> <span class="ss">defsymbol:</span> <span class="mi">4</span><span class="p">]</span>
+  <span class="c1"># アトムで関数名を書ける</span>
+  <span class="n">defsymbol</span> <span class="ss">:fA0</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">],</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+  <span class="n">defsymbol</span> <span class="ss">:"Hoge"</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">],</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+  <span class="n">defsymbol</span> <span class="ss">:"0Fuga"</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">],</span> <span class="k">do</span><span class="p">:</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+  <span class="n">defsymbol</span> <span class="ss">:"!\"</span><span class="c1">#$%&amp;'()=~|", [a, b], do: a + b</span>
+
+  <span class="c1"># when も書ける</span>
+  <span class="n">defsymbol</span> <span class="ss">:f</span><span class="p">,</span> <span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">],</span> <span class="ow">when</span><span class="p">:</span> <span class="n">a</span> <span class="o">&lt;</span> <span class="n">b</span> <span class="k">do</span>
+    <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="no">MyApp</span><span class="o">.</span><span class="n">fA0</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="s2">"Hoge"</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="s2">"0Fuga"</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+<span class="no">MyApp</span><span class="o">.</span><span class="s2">"!</span><span class="se">\"</span><span class="s2">#$%&amp;'()=~|"</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span>
+</pre></div></div>
+
+<p>このようなマクロを定義することで、無事、記号を含む関数を定義できるようになりました。</p>
+
+<h2>
+<span id="なぜ記号入り関数を定義したいのか" class="fragment"></span><a href="#%E3%81%AA%E3%81%9C%E8%A8%98%E5%8F%B7%E5%85%A5%E3%82%8A%E9%96%A2%E6%95%B0%E3%82%92%E5%AE%9A%E7%BE%A9%E3%81%97%E3%81%9F%E3%81%84%E3%81%AE%E3%81%8B"><i class="fa fa-link"></i></a>なぜ記号入り関数を定義したいのか</h2>
+
+<p>こんなもの何に使うんだ、と思うかもしれませんが、実際に、プロダクションのコードで記号入りの関数を定義する必要がありました。</p>
+
+<p>というのも、ErlangにはXMLをパースする <a href="http://erlang.org/doc/man/xmerl.html" rel="nofollow noopener" target="_blank"><code>xmerl</code></a> というライブラリがあり、<code>xmerl:export_element/2</code> などを実行した際にコールバックされる関数の名前が、<code>#text#</code> や <code>#element#</code> といった、記号入りの名前なのです。</p>
+
+<p>この詳細は省きますが、例えばXMLの中に入っている無駄な空白を除去するなら、以下のように書きます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># XMLの空白を除去するコールバックモジュール</span>
+<span class="k">defmodule</span> <span class="no">RemoveSpace</span> <span class="k">do</span>
+  <span class="kn">import</span> <span class="no">Symbol</span><span class="p">,</span> <span class="ss">only:</span> <span class="p">[</span><span class="ss">defsymbol:</span> <span class="mi">3</span><span class="p">]</span>
+
+  <span class="n">defsymbol</span> <span class="ss">:"</span><span class="err">#</span><span class="ss">xml-inheritance</span><span class="err">#</span><span class="ss">"</span><span class="p">,</span> <span class="p">[]</span> <span class="k">do</span>
+    <span class="ss">:xmerl_xml</span><span class="o">.</span><span class="s2">"#xml-inheritance#"</span><span class="p">()</span>
+  <span class="k">end</span>
+
+  <span class="n">defsymbol</span> <span class="ss">:"</span><span class="err">#</span><span class="ss">text</span><span class="err">#</span><span class="ss">"</span><span class="p">,</span> <span class="p">[</span><span class="n">text</span><span class="p">]</span> <span class="k">do</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="no">IO</span><span class="o">.</span><span class="n">iodata_to_binary</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="no">Regex</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sr">~r/\n\s*/</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="no">Regex</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sr">~r/&gt;\s+&lt;/</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="s2">"&gt;&lt;"</span><span class="p">)</span>
+    <span class="ss">:xmerl_xml</span><span class="o">.</span><span class="s2">"#text#"</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="n">defsymbol</span> <span class="ss">:"</span><span class="err">#</span><span class="ss">element</span><span class="err">#</span><span class="ss">"</span><span class="p">,</span> <span class="p">[</span><span class="n">tag</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">attrs</span><span class="p">,</span> <span class="n">_parents</span><span class="p">,</span> <span class="n">_element</span><span class="p">]</span> <span class="k">do</span>
+    <span class="p">[</span><span class="ss">:xmerl_lib</span><span class="o">.</span><span class="n">start_tag</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">attrs</span><span class="p">),</span> <span class="n">data</span><span class="p">,</span> <span class="ss">:xmerl_lib</span><span class="o">.</span><span class="n">end_tag</span><span class="p">(</span><span class="n">tag</span><span class="p">)]</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># 適当な空白等が入ったXML</span>
+<span class="n">xml</span> <span class="o">=</span> <span class="sd">'''
+&lt;?xml version="1.0"?&gt;   &lt;root&gt;
+    &lt;foo&gt;
+        &lt;/foo&gt;
+&lt;/root&gt;
+'''</span>
+
+<span class="p">{</span><span class="n">xml_element</span><span class="p">,</span> <span class="n">_</span><span class="p">}</span> <span class="o">=</span> <span class="ss">:xmerl_scan</span><span class="o">.</span><span class="n">string</span><span class="p">(</span><span class="n">xml</span><span class="p">)</span>
+<span class="n">rs_xml</span> <span class="o">=</span> <span class="ss">:xmerl</span><span class="o">.</span><span class="n">export_element</span><span class="p">(</span><span class="n">xml_element</span><span class="p">,</span> <span class="no">RemoveSpace</span><span class="p">)</span> <span class="o">|&gt;</span> <span class="no">IO</span><span class="o">.</span><span class="n">chardata_to_string</span><span class="p">()</span>
+
+<span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="n">rs_xml</span>
+<span class="c1"># &lt;root&gt;&lt;foo&gt;&lt;/foo&gt;&lt;/root&gt; が出力される</span>
+</pre></div></div>
+
+<p>このように、<code>xmerl</code>を使っていると、記号入りの関数を定義する必要が出てくるのです。</p>
+
+<p>ということで、必要になった人は上記のコードを使うといいでしょう。</p>

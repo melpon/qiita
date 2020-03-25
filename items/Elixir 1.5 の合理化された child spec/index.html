@@ -1,0 +1,150 @@
+<p>Elixir 1.5 で、新しい child spec の指定方法が<a href="https://elixir-lang.org/blog/2017/07/25/elixir-v1-5-0-released/#streamlined-child-specs" rel="nofollow noopener" target="_blank">追加されました</a>。<br>
+ここでは、この追加された機能の説明と、それによって何が出来るようになったかを説明します。</p>
+
+<h2>
+<span id="合理化された-child-spec1" class="fragment"></span><a href="#%E5%90%88%E7%90%86%E5%8C%96%E3%81%95%E3%82%8C%E3%81%9F-child-spec1"><i class="fa fa-link"></i></a>合理化された child spec<sup id="fnref1"><a href="#fn1" rel="footnote" title="「合理化された」は Streamlined を訳したもので、Streamlined には「無駄を無くして良くしていく」みたいな意味があるらしく、一言で言うと「合理化」になるらしい。">1</a></sup>
+</h2>
+
+<p>今までは、スーパーバイザを起動する時の child spec は以下のように書いていました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+  <span class="no">Supervisor</span><span class="o">.</span><span class="no">Spec</span><span class="o">.</span><span class="n">supervisor</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span> <span class="p">[]),</span>
+  <span class="no">Supervisor</span><span class="o">.</span><span class="no">Spec</span><span class="o">.</span><span class="n">worker</span><span class="p">(</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyServer</span><span class="p">,</span> <span class="p">[</span><span class="ss">:foo</span><span class="p">]),</span>
+<span class="p">]</span>
+
+<span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+</pre></div></div>
+
+<p>このように <code>Supervisor.Spec.supervisr/2</code> や <code>Supervisor.Spec.worker/2</code> を使うことで child spec を書いていました。</p>
+
+<p>ただ、これは間違って記述する可能性があります。<br>
+<code>MyApp.Repo</code> をスーパーバイザでなくワーカーとして起動したり、<code>MyApp.MyServer</code> をワーカーでなくスーパーバイザとして起動したりといったミスをする可能性があります。<br>
+通常、各モジュールはどちらのタイプで起動するか決まっていて、子を起動する段階で決めるものではないのです。</p>
+
+<p>子のタイプを指定する <code>:type</code> オプションだけでなく、<code>:start</code> や <code>:restart</code> オプションも大体同様で、多くの場合はこれらはモジュールを書く段階で決めることであり、子を起動する段階で決めることではありません。<br>
+つまり多くの場合 <strong>child spec はそのモジュールを構成する一部分である</strong> ということです。</p>
+
+<p>そこで、モジュールに <code>child_spec/1</code> という関数を書いておけば、子を起動するのは以下のように書くだけで済むようになりました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+  <span class="no">MyApp</span><span class="o">.</span><span class="no">Repo</span><span class="p">,</span>
+  <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyServer</span><span class="p">,</span> <span class="p">[</span><span class="ss">:foo</span><span class="p">]},</span>
+<span class="p">]</span>
+
+<span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+</pre></div></div>
+
+<p>このように書いておけば、<code>MyApp.Repo.child_spec([])</code> と <code>MyApp.MyServer.child_spec([:foo])</code> を呼んで child spec を取得して、それぞれのプロセスを起動するようになりました。<br>
+当然ですが、指定したモジュールが <code>child_spec/1</code> を実装していない場合はエラーになります。</p>
+
+<p>また、この合理化された child spec により <strong><code>Supervisor.Spec</code> は deprecated になりました</strong>。子の起動時に child spec をカスタマイズしたいなら、 <code>Supervisor.child_spec/2</code> を使うといいでしょう。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="no">Supervisor</span><span class="o">.</span><span class="n">child_spec</span><span class="p">({</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyServer</span><span class="p">,</span> <span class="p">[</span><span class="ss">:foo</span><span class="p">]},</span> <span class="ss">shutdown:</span> <span class="mi">10_000</span><span class="p">)</span>
+</pre></div></div>
+
+<p>また、そのモジュールが <code>child_spec/1</code> を実装していない場合は、<a href="http://erlang.org/doc/design_principles/sup_princ.html#id78910" rel="nofollow noopener" target="_blank">マップ形式の child spec</a> を指定するといいでしょう。<br>
+タプル形式で渡すよりいろいろと省略が可能なので、楽ができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># MyApp.MyWorker.start_link([:foo]) でプロセスを起動する</span>
+<span class="p">%{</span>
+  <span class="ss">id:</span>       <span class="no">MyApp</span><span class="o">.</span><span class="no">MyWorker</span><span class="p">,</span>                          <span class="c1"># 必須</span>
+  <span class="ss">start:</span>    <span class="p">{</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyWorker</span><span class="p">,</span> <span class="ss">:start_link</span><span class="p">,</span> <span class="p">[[</span><span class="ss">:foo</span><span class="p">]]},</span> <span class="c1"># 必須</span>
+  <span class="ss">restart:</span>  <span class="ss">:permanent</span><span class="p">,</span>       <span class="c1"># 省略可</span>
+  <span class="ss">shutdown:</span> <span class="mi">5_000</span><span class="p">,</span>            <span class="c1"># 省略可</span>
+  <span class="ss">type:</span>     <span class="ss">:worker</span><span class="p">,</span>          <span class="c1"># 省略可</span>
+  <span class="ss">modules:</span>  <span class="p">[</span><span class="no">MyApp</span><span class="o">.</span><span class="no">MyWorker</span><span class="p">],</span> <span class="c1"># 省略可</span>
+<span class="p">}</span>
+</pre></div></div>
+
+<h2>
+<span id="use-genserver-が-child_spec1-を実装するようになった" class="fragment"></span><a href="#use-genserver-%E3%81%8C-child_spec1-%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%99%E3%82%8B%E3%82%88%E3%81%86%E3%81%AB%E3%81%AA%E3%81%A3%E3%81%9F"><i class="fa fa-link"></i></a><code>use GenServer</code> が <code>child_spec/1</code> を実装するようになった</h2>
+
+<p>毎回 <code>child_spec/1</code> を定義するのは面倒なので、<code>use GenServer</code> で自動的に <code>child_spec/1</code> が実装されるようになりました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyServer</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GenServer</span>
+<span class="k">end</span>
+
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">MyServer</span><span class="o">.</span><span class="n">child_spec</span><span class="p">([</span><span class="ss">:foo</span><span class="p">])</span>
+<span class="c1"># %{</span>
+<span class="c1">#   id: MyServer,</span>
+<span class="c1">#   restart: :permanent,</span>
+<span class="c1">#   shutdown: 5000,</span>
+<span class="c1">#   start: {MyServer, :start_link, [[:foo]]},</span>
+<span class="c1">#   type: :worker,</span>
+<span class="c1"># }</span>
+</pre></div></div>
+
+<p><code>use GenServer</code> の場合、必ず <code>type: :worker</code> になります。<br>
+<code>child_spec/1</code> の定義をカスタマイズしたい場合、<code>use GenServer</code> に引数を追加するだけです。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MyServer</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">GenServer</span><span class="p">,</span> <span class="ss">restart:</span> <span class="ss">:temporary</span><span class="p">,</span> <span class="ss">shutdown:</span> <span class="mi">10_000</span>
+<span class="k">end</span>
+
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">MyServer</span><span class="o">.</span><span class="n">child_spec</span><span class="p">([</span><span class="ss">:foo</span><span class="p">])</span>
+<span class="c1"># %{</span>
+<span class="c1">#   id: MyServer,</span>
+<span class="c1">#   restart: :temporary,</span>
+<span class="c1">#   shutdown: 10_000,</span>
+<span class="c1">#   start: {MyServer, :start_link, [[:foo]]},</span>
+<span class="c1">#   type: :worker,</span>
+<span class="c1"># }</span>
+</pre></div></div>
+
+<p>詳細は <a href="https://hexdocs.pm/elixir/Supervisor.html#module-child-specification" rel="nofollow noopener" target="_blank">Child specification</a> を読んで下さい。</p>
+
+<p>また、<code>GenServer</code> と同様、<code>use Supervisor</code> する時にも自動的に <code>child_spec/1</code> が定義されるようになりました。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">MySupervisor</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Supervisor</span>
+<span class="k">end</span>
+
+<span class="no">IO</span><span class="o">.</span><span class="n">inspect</span> <span class="no">MySupervisor</span><span class="o">.</span><span class="n">child_spec</span><span class="p">([</span><span class="ss">:foo</span><span class="p">])</span>
+<span class="c1"># %{</span>
+<span class="c1">#   id: MySupervisor,</span>
+<span class="c1">#   restart: :permanent,</span>
+<span class="c1">#   start: {MySupervisor, :start_link, [[:foo]]},</span>
+<span class="c1">#   type: :supervisor,</span>
+<span class="c1"># }</span>
+</pre></div></div>
+
+<p><code>use Supervisor</code> の場合、必ず <code>type: :supervisor</code> になります。<br>
+モジュールベースのスーパーバイザを定義する時には良さそうです。</p>
+
+<h2>
+<span id="既存のモジュールが-child_spec1-を実装した" class="fragment"></span><a href="#%E6%97%A2%E5%AD%98%E3%81%AE%E3%83%A2%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB%E3%81%8C-child_spec1-%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%9F"><i class="fa fa-link"></i></a>既存のモジュールが <code>child_spec/1</code> を実装した</h2>
+
+<p>既存の <code>Agent</code> や <code>Registry</code>、 <code>Task</code> といったライブラリも <code>child_spec/1</code> を実装するようになりました。<br>
+そのため以下のように書けるようになっています。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="n">children</span> <span class="o">=</span> <span class="p">[</span>
+  <span class="p">{</span><span class="no">Registry</span><span class="p">,</span> <span class="ss">keys:</span> <span class="ss">:unique</span><span class="p">,</span> <span class="ss">name:</span> <span class="no">MyApp</span><span class="o">.</span><span class="no">Registry</span><span class="p">},</span>
+  <span class="p">{</span><span class="no">Agent</span><span class="p">,</span> <span class="k">fn</span> <span class="o">-&gt;</span> <span class="ss">:ok</span> <span class="k">end</span><span class="p">},</span>
+<span class="p">]</span>
+<span class="no">Supervisor</span><span class="o">.</span><span class="n">start_link</span><span class="p">(</span><span class="n">children</span><span class="p">,</span> <span class="ss">strategy:</span> <span class="ss">:one_for_one</span><span class="p">)</span>
+</pre></div></div>
+
+<p>わざわざ <code>Supervisor.Spec.worker/2</code> とか呼ばなくていいので少し楽ができます。</p>
+
+<h2>
+<span id="まとめ" class="fragment"></span><a href="#%E3%81%BE%E3%81%A8%E3%82%81"><i class="fa fa-link"></i></a>まとめ</h2>
+
+<p>合理化された child spec によって、モジュール側に child spec を書けるようになりました。</p>
+
+<p>モジュール側に child spec を定義するべき場合、それを定義しておくのがいいでしょう。<br>
+幸いなことに <code>use GenServer</code> で <code>child_spec/1</code> が自動的に定義されるので、適切に引数を渡すだけで構いません。</p>
+
+<p>こうすることで、適切な場所に child spec が定義されて、child spec を間違えて指定してしまうということが無くなります。<br>
+有効に活用していきましょう。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>「合理化された」は Streamlined を訳したもので、Streamlined には「無駄を無くして良くしていく」みたいな意味があるらしく、一言で言うと「合理化」になるらしい。 <a href="#fnref1">↩</a></p>
+</li>
+
+</ol>
+</div>

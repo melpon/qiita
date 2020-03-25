@@ -1,0 +1,246 @@
+<p>Phoenix では、様々な場所で <a href="https://hexdocs.pm/plug/readme.html" rel="nofollow noopener" target="_blank">Plug</a> ライブラリの仕組みが使われています。<br>
+この仕組みを知っておくことで、Phoenix を理解しやすくなると思います。</p>
+
+<h2>
+<span id="伝えたいこと" class="fragment"></span><a href="#%E4%BC%9D%E3%81%88%E3%81%9F%E3%81%84%E3%81%93%E3%81%A8"><i class="fa fa-link"></i></a>伝えたいこと</h2>
+
+<p>書いていくうちに雑多になってきたので、まとめだけ書いておきます。</p>
+
+<ul>
+<li>エンドポイント、ルータ、コントローラは、Plug から見ればどれも <code>init/1</code> と <code>call/2</code> が実行されただけのミドルウェアである。</li>
+<li>Phoenix はそれらに意味を持たせて、エンドポイント、ルータ、コントローラという名前を付けているだけ。</li>
+</ul>
+
+<h2>
+<span id="plug-ライブラリについて" class="fragment"></span><a href="#plug-%E3%83%A9%E3%82%A4%E3%83%96%E3%83%A9%E3%83%AA%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6"><i class="fa fa-link"></i></a>Plug ライブラリについて</h2>
+
+<p>Plug ライブラリは、HTTP のリクエストを受けて返すだけ、単純な Web フレームワークの１つです。<br>
+Plug は簡単にミドルウェアを作って組み合わせられるような仕組みになっているのが特徴で、Phoenix はこの機能を便利に使っています。</p>
+
+<p>Plug のミドルウェアを作るには、２種類あります。<br>
+<code>fun(Plug.Conn.t, any) :: Plug.Conn.t</code> な関数を作るか、<code>@callback init(any) :: any</code> と <code>@callback call(Plug.Conn.t, any) :: Plug.Conn.t</code> というビヘイビアを定義したモジュールを作るかです。</p>
+
+<p>例えば以下の様に書きます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Foo</span> <span class="k">do</span>
+  <span class="k">defmacro</span> <span class="n">__using__</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="kn">quote</span> <span class="k">do</span>
+      <span class="c1"># 関数 Plug</span>
+      <span class="k">def</span> <span class="n">foo</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+        <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"foo plug"</span>
+        <span class="n">conn</span>
+      <span class="k">end</span>
+    <span class="k">end</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="c1"># モジュール Plug</span>
+<span class="k">defmodule</span> <span class="no">Bar</span> <span class="k">do</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">opts</span>
+  <span class="k">end</span>
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"Bar plug"</span>
+    <span class="n">conn</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>このミドルウェアを作っておくと、以下の様に書くことができます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Mod</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span>
+  <span class="kn">use</span> <span class="no">Foo</span>
+
+  <span class="n">plug</span> <span class="ss">:foo</span>
+  <span class="n">plug</span> <span class="no">Bar</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p><code>plug</code> マクロによって、ミドルウェアを組み合わせています。<br>
+また、<code>use Plug.Builder</code> によって、このモジュールに <code>init/1</code> と <code>call/2</code> が展開されます。<br>
+そのため <code>Mod.foo/2</code> 関数や <code>Bar</code> モジュールだけでなく、<code>Mod</code> モジュールもミドルウェアになります。</p>
+
+<p>この時、このコードは大体以下の様に展開されます。</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">Mod</span> <span class="k">do</span>
+  <span class="c1"># use Plug.Builder</span>
+  <span class="k">def</span> <span class="n">init</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">opts</span>
+  <span class="k">end</span>
+
+  <span class="k">def</span> <span class="n">call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">plug_builder_call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span>
+  <span class="k">end</span>
+
+  <span class="n">defoverridable</span> <span class="p">[</span><span class="ss">init:</span> <span class="mi">1</span><span class="p">,</span> <span class="ss">call:</span> <span class="mi">2</span><span class="p">]</span>
+
+  <span class="c1"># use Foo</span>
+  <span class="k">def</span> <span class="n">foo</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">opts</span><span class="p">)</span> <span class="k">do</span>
+    <span class="no">IO</span><span class="o">.</span><span class="n">puts</span> <span class="s2">"foo plug"</span>
+    <span class="n">conn</span>
+  <span class="k">end</span>
+
+  <span class="c1"># Plug.Builder.__before_compile__/1</span>
+  <span class="k">defp</span> <span class="n">plug_builder_call</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="k">do</span>
+    <span class="c1"># 各plugの呼び出し。実際はもうちょい複雑。</span>
+    <span class="n">conn</span>
+    <span class="o">|&gt;</span> <span class="n">foo</span><span class="p">([])</span>
+    <span class="o">|&gt;</span> <span class="no">Bar</span><span class="o">.</span><span class="n">call</span><span class="p">([])</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>見ての通り、<code>plug :foo</code> や <code>plug Bar</code> のマクロから、<code>conn |&gt; foo([]) |&gt; Bar.call([])</code> という感じのコードを生成するようになっていて、これによってミドルウェア呼び出しを連鎖させることができるようになっています。<sup id="fnref1"><a href="#fn1" rel="footnote" title="実際は実行条件のチェックや例外が起きたときの処理や途中で中断した際の処理とかが入ってるのでもうちょい複雑。">1</a></sup></p>
+
+<p>このミドルウェア呼び出しの連鎖をするコードを生成するのが <code>Plug.Builder.compile/3</code> です。<sup id="fnref2"><a href="#fn2" rel="footnote" title="init/1 は Plug.Builder.compile/3 実行時、つまりコンパイル時に呼ばれるようになっていて、unquote(body) 時には call/2 しか残りません。">2</a></sup></p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="c1"># :foo と Bar からミドルウェア呼び出しのコードに変換</span>
+<span class="p">{</span><span class="n">conn</span><span class="p">,</span> <span class="n">body</span><span class="p">}</span> <span class="o">=</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Builder</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">__ENV__</span><span class="p">,</span> <span class="p">[{</span><span class="ss">:foo</span><span class="p">,</span> <span class="p">[],</span> <span class="no">true</span><span class="p">},</span> <span class="p">{</span><span class="no">Bar</span><span class="p">,</span> <span class="p">[],</span> <span class="no">true</span><span class="p">}],</span> <span class="p">[])</span>
+
+<span class="o">...</span>
+
+<span class="c1"># これで conn |&gt; foo([]) |&gt; Bar.call([]) のようなコードに展開される</span>
+<span class="kn">unquote</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+</pre></div></div>
+
+<p><code>use Plug.Builder</code> をした場合には、<code>plug</code> によって集められた情報を <code>Plug.Builder.compile/3</code> でコードを生成し、<code>plug_builder_call/2</code> 内にそのコードを配置するようになっています。</p>
+
+<h2>
+<span id="phoenix-の-plug" class="fragment"></span><a href="#phoenix-%E3%81%AE-plug"><i class="fa fa-link"></i></a>Phoenix の Plug</h2>
+
+<p>Phoenix では、エンドポイント、ルータ、コントローラの中で <code>plug</code> が使えるようになっています。<br>
+また、エンドポイントやルータそのものもミドルウェアになっていて、エンドポイントの <code>plug</code> の一部にルータが、ルータの <code>plug</code> の一部にコントローラが含まれています。<br>
+つまりミドルウェア呼び出しはネストするようになっています。</p>
+
+<p>例えば、</p>
+
+<div class="code-frame" data-lang="elixir"><div class="highlight"><pre><span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Endpoint</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Endpoint</span><span class="p">,</span> <span class="ss">otp_app:</span> <span class="ss">:hello_world</span>
+
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Static</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">RequestId</span>
+  <span class="n">plug</span> <span class="no">Plug</span><span class="o">.</span><span class="no">Logger</span>
+
+  <span class="o">...</span>
+
+  <span class="n">plug</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">Router</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Router</span>
+
+  <span class="n">pipeline</span> <span class="ss">:browser</span> <span class="k">do</span>
+    <span class="n">plug</span> <span class="ss">:accepts</span><span class="p">,</span> <span class="p">[</span><span class="s2">"html"</span><span class="p">]</span>
+    <span class="n">plug</span> <span class="ss">:fetch_session</span>
+    <span class="n">plug</span> <span class="ss">:fetch_flash</span>
+    <span class="o">...</span>
+  <span class="k">end</span>
+
+  <span class="n">scope</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">HelloWorld</span> <span class="k">do</span>
+    <span class="n">pipe_through</span> <span class="ss">:browser</span>
+
+    <span class="n">get</span> <span class="s2">"/"</span><span class="p">,</span> <span class="no">PageController</span><span class="p">,</span> <span class="ss">:index</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+
+<span class="k">defmodule</span> <span class="no">HelloWorld</span><span class="o">.</span><span class="no">PageController</span> <span class="k">do</span>
+  <span class="kn">use</span> <span class="no">Phoenix</span><span class="o">.</span><span class="no">Controller</span>
+
+  <span class="n">plug</span> <span class="ss">:authentication</span>
+  <span class="n">plug</span> <span class="ss">:admin_required</span>
+  <span class="o">...</span>
+
+  <span class="k">def</span> <span class="n">index</span><span class="p">(</span><span class="n">conn</span><span class="p">,</span> <span class="n">_params</span><span class="p">)</span> <span class="k">do</span>
+    <span class="n">render</span> <span class="n">conn</span><span class="p">,</span> <span class="s2">"index.html"</span>
+  <span class="k">end</span>
+<span class="k">end</span>
+</pre></div></div>
+
+<p>というコードがある時、<code>HelloWorld.Endpoint.call/2</code> を呼び出した場合のコールグラフは、以下の様になります。</p>
+
+<ul>
+<li>
+<code>HelloWorld.Endpoint.call/2</code>
+
+<ul>
+<li><code>Plug.Static.call/2</code></li>
+<li><code>Plug.RequestId.call/2</code></li>
+<li><code>Plug.Logger.call/2</code></li>
+<li>...</li>
+<li>
+<code>HelloWorld.Router.call/2</code>
+
+<ul>
+<li><code>accepts/2</code></li>
+<li><code>fetch_session/2</code></li>
+<li><code>fetch_flash/2</code></li>
+<li>...</li>
+<li>
+<code>HelloWorld.PageController.call/2</code>
+
+<ul>
+<li><code>accepts/2</code></li>
+<li><code>HelloWorld.MyAuth.call/2</code></li>
+<li>
+<code>action/2</code>
+
+<ul>
+<li><code>index/2</code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+<p>まず、エンドポイントの <code>call/2</code> が実行されます。<br>
+次に、そのエンドポイントに書かれた <code>plug</code> を次々と実行し、最後の <code>plug</code> としてルータが実行されます。<br>
+次に、そのルータに書かれた <code>plug</code> を次々と実行し、最後の <code>plug</code> としてコントローラが実行されます。<br>
+次に、そのコントローラに書かれた <code>plug</code> を次々と実行して、最後に <code>action/2</code> を呼び、これによって自分のハンドルしたい関数 <code>index/2</code> が呼ばれることになります。</p>
+
+<h2>
+<span id="plug-の使い分け" class="fragment"></span><a href="#plug-%E3%81%AE%E4%BD%BF%E3%81%84%E5%88%86%E3%81%91"><i class="fa fa-link"></i></a><code>plug</code> の使い分け</h2>
+
+<p>エンドポイントに <code>plug</code> を追加すると、そのエンドポイントに対する全てのリクエストに対してそのミドルウェアが実行されます。</p>
+
+<p>ルータ（のパイプライン）に <code>plug</code> を追加すると、特定の URL の下にある場合だけそのミドルウェアが実行されるようになります。</p>
+
+<p>コントローラに <code>plug</code> を追加すると、そのコントローラを実行する場合だけそのミドルウェアが実行されるようになります。<br>
+また、コントローラの特定のアクション（<code>:index</code> とか <code>:show</code> とか）だけ実行されるようにしたいなら <code>when</code> を使ってガード条件が書けます。<br>
+<a href="http://qiita.com/melpon/items/9530c52ab1350acb4409#plug" id="reference-44d980037884300b011b">Phoenixのコントローラ#plug</a> を参照。</p>
+
+<h2>
+<span id="plug-の実体" class="fragment"></span><a href="#plug-%E3%81%AE%E5%AE%9F%E4%BD%93"><i class="fa fa-link"></i></a><code>plug</code> の実体</h2>
+
+<p>エンドポイント、ルータ、コントローラでそれぞれ単に <code>plug</code> と書いてミドルウェアを追加してますが、実のところ、これらの <code>plug</code> マクロはそれぞれ違う実装を使っています。</p>
+
+<ul>
+<li>エンドポイント: <code>Plug.Builder.plug</code>
+</li>
+<li>ルータ: <code>Phoenix.Router.plug</code>
+</li>
+<li>コントローラ: <code>Phoenix.Controller.Pipeline.plug</code>
+</li>
+</ul>
+
+<p>エンドポイントはオリジナルの <code>plug</code> を使っていますが、それ以外は独自の実装になっています。<br>
+ただ、最終的には全部 <code>Plug.Builder.compile/3</code> を呼び出してコードを生成しているので、一応 Plug を使っているとは言える。</p>
+
+<div class="footnotes">
+<hr>
+<ol>
+
+<li id="fn1">
+<p>実際は実行条件のチェックや例外が起きたときの処理や途中で中断した際の処理とかが入ってるのでもうちょい複雑。 <a href="#fnref1">↩</a></p>
+</li>
+
+<li id="fn2">
+<p><code>init/1</code> は <code>Plug.Builder.compile/3</code> 実行時、つまりコンパイル時に呼ばれるようになっていて、<code>unquote(body)</code> 時には <code>call/2</code> しか残りません。 <a href="#fnref2">↩</a></p>
+</li>
+
+</ol>
+</div>
